@@ -575,16 +575,23 @@ function collideCars(vehicles, city, onPlayerCrash, dt = 1 / 60) {
       if (bMoves) clampCarToCity(b);
       const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
       if (closing > 60) {
-        // One impact per car per half-second: two cars leaning on each other
-        // must not take damage every step until they explode.
-        const hit = closing / 90;
-        if (a.hitCooldown <= 0) {
-          a.hitCooldown = 0.5;
-          damageVehicle(a, hit);
-        }
-        if (b.hitCooldown <= 0) {
-          b.hitCooldown = 0.5;
-          damageVehicle(b, hit);
+        // A light brush (closing under 140) shoves the cars but does not dent
+        // them — only a real hit does damage, matching the building threshold
+        // (140). Weaving through traffic at speed used to grind the car down
+        // on side-swipes alone (probe 25: wrecked at 103s with the escape
+        // already working, the gap past 650). One impact per car per
+        // half-second: two cars leaning on each other must not take damage
+        // every step until they explode.
+        if (closing > 140) {
+          const hit = closing / 90;
+          if (a.hitCooldown <= 0) {
+            a.hitCooldown = 0.5;
+            damageVehicle(a, hit);
+          }
+          if (b.hitCooldown <= 0) {
+            b.hitCooldown = 0.5;
+            damageVehicle(b, hit);
+          }
         }
         if (a.state === 'player' || b.state === 'player') {
           playerHit = true;
