@@ -16,6 +16,8 @@ export function createAudio() {
     engineGain: null,
     engineFilter: null,
     ambientGain: null,
+    sirenOsc: null,
+    sirenGain: null,
     muted: false,
     started: false,
   };
@@ -182,5 +184,63 @@ export function createAudio() {
     noiseBurst(0.25, 300 + strength01 * 500, 0.2 + strength01 * 0.3);
   }
 
-  return { start, setEngine, setMuted, blip, door, steal, crash };
+  /** A gunshot: a sharp crack of noise plus a low thump. */
+  function gunshot() {
+    noiseBurst(0.09, 3200, 0.32);
+    blip(130, 0.07, 0.16);
+  }
+
+  /** An explosion: a long low rumble with a deep falling note under it. */
+  function explosion() {
+    noiseBurst(0.7, 220, 0.5);
+    blip(55, 0.5, 0.3);
+  }
+
+  /** A punch: a short low thud. */
+  function punch() {
+    noiseBurst(0.07, 480, 0.22);
+    blip(95, 0.09, 0.22);
+  }
+
+  /** The busted sting: three descending notes, the sound of a bad day. */
+  function busted() {
+    blip(392, 0.16, 0.16);
+    setTimeout(() => blip(330, 0.16, 0.16), 150);
+    setTimeout(() => blip(262, 0.28, 0.16), 300);
+  }
+
+  /**
+   * The police siren: a two-tone wail whose volume follows `level` (0 = silent,
+   * 1 = right on top of the player). The oscillator is built lazily on the first
+   * call after start(), and idles at zero gain when no police car is near.
+   */
+  function setSiren(level) {
+    if (!audio.context || !audio.started) return;
+    try {
+      const ctx = audio.context;
+      if (!audio.sirenOsc) {
+        audio.sirenOsc = ctx.createOscillator();
+        audio.sirenOsc.type = 'triangle';
+        audio.sirenOsc.frequency.value = 820;
+        // A slow square wave swings the note between its two tones.
+        const lfo = ctx.createOscillator();
+        lfo.type = 'square';
+        lfo.frequency.value = 0.8;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 140;
+        lfo.connect(lfoGain);
+        lfoGain.connect(audio.sirenOsc.frequency);
+        audio.sirenGain = ctx.createGain();
+        audio.sirenGain.gain.value = 0;
+        audio.sirenOsc.connect(audio.sirenGain);
+        audio.sirenGain.connect(audio.master);
+        audio.sirenOsc.start();
+        lfo.start();
+      }
+      const clamped = Math.max(0, Math.min(1, level));
+      audio.sirenGain.gain.setTargetAtTime(clamped * 0.045, ctx.currentTime, 0.15);
+    } catch { /* ignore */ }
+  }
+
+  return { start, setEngine, setMuted, blip, door, steal, crash, gunshot, explosion, punch, busted, setSiren };
 }
