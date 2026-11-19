@@ -517,6 +517,15 @@ function stepTrafficCar(car, city, vehicles, player, dt) {
   car.y = Math.max(24, Math.min(city.height - 24, car.y));
 }
 
+/** Keep a car inside the city: a shove past the edge would wedge it where the
+ * movement code cannot bring it back from (a ram once left the player's car at
+ * y = -8, able to move only sideways). */
+function clampCarToCity(car) {
+  const radius = carDimensions(car.model).width / 2 + 4;
+  car.x = Math.max(CITY.seaWidth + radius, Math.min(CITY.width - radius, car.x));
+  car.y = Math.max(radius, Math.min(CITY.height - radius, car.y));
+}
+
 /** Push overlapping cars apart and trade a little speed; returns true if the player was hit. */
 function collideCars(vehicles, city, onPlayerCrash, dt = 1 / 60) {
   let playerHit = false;
@@ -561,6 +570,9 @@ function collideCars(vehicles, city, onPlayerCrash, dt = 1 / 60) {
         b.x = prevBX;
         b.y = prevBY;
       }
+      // ... and never out of the city (see clampCarToCity).
+      if (aMoves) clampCarToCity(a);
+      if (bMoves) clampCarToCity(b);
       const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
       if (closing > 60) {
         // One impact per car per half-second: two cars leaning on each other
