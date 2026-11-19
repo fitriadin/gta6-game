@@ -50,6 +50,35 @@ export function carHitsBuilding(city, model, x, y, angle) {
   );
 }
 
+/** How deep a circle sinks into the nearest building (0 when clear). */
+function circleBuildingDepth(city, x, y, r) {
+  let worst = 0;
+  for (const building of city.buildings) {
+    const nearestX = Math.max(building.x, Math.min(x, building.x + building.width));
+    const nearestY = Math.max(building.y, Math.min(y, building.y + building.height));
+    const depth = r - Math.hypot(x - nearestX, y - nearestY);
+    if (depth > worst) worst = depth;
+  }
+  return worst;
+}
+
+/**
+ * How deep the car body sinks into buildings at (x, y) with this angle — the
+ * two axle circles' penetrations added up, 0 when clear. A car that turned its
+ * nose into a wall (rotation is not collision-checked) can still back out when
+ * the move does not sink it deeper, instead of being wedged forever.
+ */
+export function carOverlapDepth(city, model, x, y, angle) {
+  const { length, width } = carDimensions(model);
+  const forward = forwardOf(angle);
+  const radius = width / 2 + 4;
+  const half = length / 2 - 8;
+  return (
+    circleBuildingDepth(city, x + forward.x * half, y + forward.y * half, radius) +
+    circleBuildingDepth(city, x - forward.x * half, y - forward.y * half, radius)
+  );
+}
+
 export function makeVehicle(model, colour, x, y, angle, state = 'parked') {
   return {
     id: nextId,
@@ -283,9 +312,17 @@ export function stepPlayerVehicle(vehicle, city, drive, dt, fx, onCrash) {
   const radius = carDimensions(vehicle.model).width / 2 + 4;
   const prevX = vehicle.x;
   const prevY = vehicle.y;
-  // Move axis by axis so the car slides along walls instead of sticking.
+  // Move axis by axis so the car slides along walls instead of sticking. A move
+  // is allowed when it does not sink the car deeper into a building than it
+  // already is — a car wedged by a turn can back out, while a clear car still
+  // cannot drive into a wall at all.
   const nextX = vehicle.x + vehicle.vx * dt;
-  if (!carHitsBuilding(city, vehicle.model, nextX, vehicle.y, vehicle.angle) && nextX > CITY.seaWidth + radius && nextX < CITY.width - radius) {
+  const depthNowX = carOverlapDepth(city, vehicle.model, vehicle.x, vehicle.y, vehicle.angle);
+  if (
+    carOverlapDepth(city, vehicle.model, nextX, vehicle.y, vehicle.angle) <= depthNowX + 0.01 &&
+    nextX > CITY.seaWidth + radius &&
+    nextX < CITY.width - radius
+  ) {
     vehicle.x = nextX;
   } else {
     const impact = Math.abs(vehicle.vx);
@@ -296,7 +333,12 @@ export function stepPlayerVehicle(vehicle, city, drive, dt, fx, onCrash) {
     }
   }
   const nextY = vehicle.y + vehicle.vy * dt;
-  if (!carHitsBuilding(city, vehicle.model, vehicle.x, nextY, vehicle.angle) && nextY > radius && nextY < CITY.height - radius) {
+  const depthNowY = carOverlapDepth(city, vehicle.model, vehicle.x, vehicle.y, vehicle.angle);
+  if (
+    carOverlapDepth(city, vehicle.model, vehicle.x, nextY, vehicle.angle) <= depthNowY + 0.01 &&
+    nextY > radius &&
+    nextY < CITY.height - radius
+  ) {
     vehicle.y = nextY;
   } else {
     const impact = Math.abs(vehicle.vy);

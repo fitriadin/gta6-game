@@ -163,7 +163,7 @@ export function scareNearby(peds, x, y, radius, time) {
 }
 
 export function panicPed(ped, fromX, fromY, time) {
-  if (ped.state === 'driver' || ped.officer) return;
+  if (ped.state === 'driver' || ped.officer || ped.state === 'down') return;
   ped.state = 'flee';
   const dx = ped.x - fromX;
   const dy = ped.y - fromY;

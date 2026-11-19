@@ -31,6 +31,9 @@ export function createPolice() {
     roadblockCars: [],
     ramCooldown: 0,
     sirenLevel: 0,
+    /** Game time of the most recent crime — the pack only reinforces while the
+     * trail is fresh or a unit is still in the area, so a clean escape is real. */
+    lastCrimeAt: -100,
   };
 }
 
@@ -38,7 +41,7 @@ export function createPolice() {
 export function addWanted(police, amount, time) {
   police.wanted = Math.min(POLICE.maxStars, Math.max(0, police.wanted + amount));
   police.cleanTime = 0;
-  void time;
+  police.lastCrimeAt = time;
   return police.wanted;
 }
 
@@ -167,7 +170,71 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-/** One pursuit car: chase the player, box them in with the other cars, ram when close. */
+/** The road centre-line nearest a point, with its distance. */
+function nearestRoad(city, x, y) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const road of city.vRoads) {
+    const d = Math.abs(x - road.x);
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = { axis: 'v', pos: road.x };
+    }
+  }
+  for (const road of city.hRoads) {
+    const d = Math.abs(y - road.y);
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = { axis: 'h', pos: road.y };
+    }
+  }
+  return { axis: best.axis, pos: best.pos, dist: bestDistance };
+}
+
+/**
+ * Where a pursuit car should aim. A straight beeline at the player wedges the
+ * car against building faces (turning swings the front axle into the wall, and
+ * every move is then collision-blocked), so the car drives the road grid
+ * instead: along its own road to the intersection with the player's road, turn,
+ * and only beeline once both are on the same road.
+ */
+function pursuitAim(car, player, city) {
+  const playerRoad = nearestRoad(city, player.x, player.y);
+  if (car.axis === playerRoad.axis && car.roadPos === playerRoad.pos && playerRoad.dist < 70) {
+    return { x: player.x, y: player.y, direct: true };
+  }
+  if (car.axis === 'v') {
+    // The horizontal road nearest the player's line: their road, or the closest
+    // cross street to where they are.
+    let targetY = playerRoad.axis === 'h' ? playerRoad.pos : player.y;
+    if (playerRoad.axis !== 'h') {
+      let best = Infinity;
+      for (const road of city.hRoads) {
+        const d = Math.abs(road.y - player.y);
+        if (d < best) {
+          best = d;
+          targetY = road.y;
+        }
+      }
+    }
+    return { x: car.roadPos, y: targetY, direct: false };
+  }
+  let targetX = playerRoad.axis === 'v' ? playerRoad.pos : player.x;
+  if (playerRoad.axis !== 'v') {
+    let best = Infinity;
+    for (const road of city.vRoads) {
+      const d = Math.abs(road.x - player.x);
+      if (d < best) {
+        best = d;
+        targetX = road.x;
+      }
+    }
+  }
+  return { x: targetX, y: car.roadPos, direct: false };
+}
+
+/** One pursuit car: chase the player along the road grid, box them in with the
+ * other cars once on the same road, ram when close. */
 function stepPoliceCar(car, police, ctx, dt) {
   const player = ctx.player;
   if (car.role === 'block') {
@@ -182,21 +249,51 @@ function stepPoliceCar(car, police, ctx, dt) {
     }
   }
 
-  // Aim at the player, leading them a little — and the extra cars aim to the
-  // sides, so the pack tries to box the player in rather than queue behind them.
-  const targetX = player.x + (player.inCar ? player.inCar.vx * 0.35 : 0);
-  const targetY = player.y + (player.inCar ? player.inCar.vy * 0.35 : 0);
-  let aimX = targetX;
-  let aimY = targetY;
-  const boxIndex = police.cars.indexOf(car);
-  if (boxIndex > 0 && player.inCar) {
-    const right = rightOf(player.inCar.angle);
-    const side = boxIndex % 2 === 0 ? 1 : -1;
-    aimX = targetX + right.x * side * 95;
-    aimY = targetY + right.y * side * 95;
+  // Shoved off the tracked road (a ram, a spin): adopt the nearest road again.
+  const offTrack =
+    car.axis === 'v' ? Math.abs(car.x - car.roadPos) > 60 : Math.abs(car.y - car.roadPos) > 60;
+  if (offTrack) {
+    const road = nearestRoad(ctx.city, car.x, car.y);
+    car.axis = road.axis;
+    car.roadPos = road.pos;
   }
-  // Off the road or about to clip a wall: get back on the asphalt first.
-  if (!isRoad(ctx.city, car.x, car.y)) {
+
+  let aim = pursuitAim(car, player, ctx.city);
+  // At the intersection with the cross street, turn onto it.
+  if (!aim.direct) {
+    if (car.axis === 'v' && Math.abs(car.y - aim.y) < 24) {
+      car.axis = 'h';
+      car.roadPos = aim.y;
+      aim = pursuitAim(car, player, ctx.city);
+    } else if (car.axis === 'h' && Math.abs(car.x - aim.x) < 24) {
+      car.axis = 'v';
+      car.roadPos = aim.x;
+      aim = pursuitAim(car, player, ctx.city);
+    }
+  }
+
+  let aimX = aim.x;
+  let aimY = aim.y;
+  if (aim.direct) {
+    // Leading the player a little — and the extra cars aim to the sides, so the
+    // pack tries to box the player in rather than queue behind them.
+    const targetX = player.x + (player.inCar ? player.inCar.vx * 0.35 : 0);
+    const targetY = player.y + (player.inCar ? player.inCar.vy * 0.35 : 0);
+    aimX = targetX;
+    aimY = targetY;
+    const boxIndex = police.cars.indexOf(car);
+    if (boxIndex > 0 && player.inCar) {
+      const right = rightOf(player.inCar.angle);
+      const side = boxIndex % 2 === 0 ? 1 : -1;
+      aimX = targetX + right.x * side * 95;
+      aimY = targetY + right.y * side * 95;
+    }
+  }
+  // Off the road, or a wall right ahead: get back on the asphalt first.
+  const forward = forwardOf(car.angle);
+  const lookX = car.x + forward.x * 70;
+  const lookY = car.y + forward.y * 70;
+  if (!isRoad(ctx.city, car.x, car.y) || circleHitsBuilding(ctx.city, lookX, lookY, 10)) {
     const roadPoint = nearestRoadPoint(ctx.city, car.x, car.y);
     aimX = roadPoint.x;
     aimY = roadPoint.y;
@@ -204,10 +301,29 @@ function stepPoliceCar(car, police, ctx, dt) {
 
   const desired = Math.atan2(aimX - car.x, -(aimY - car.y));
   const diff = angleDiffTo(car.angle, desired);
+  const aimDistance = Math.hypot(aimX - car.x, aimY - car.y);
+  // Speed management: flat out from far away, but brake as the target closes
+  // in — a pursuit car that blows past the player at 400 u/s spends the chase
+  // looping around the block instead of staying on them.
   let throttle = 1;
+  const speed = Math.abs(car.speed);
+  if (aim.direct && aimDistance < 150) {
+    throttle = speed > 120 ? -0.7 : 0.4;
+  } else if (aimDistance < 120) {
+    throttle = speed > 150 ? -0.5 : 0.6;
+  } else if (Math.abs(diff) > 2.0 && speed > 150) {
+    // The target is behind: stand on the brakes, then spin around.
+    throttle = -1;
+  }
   let steer = clamp(diff * 2.4, -1, 1);
+  if (Math.abs(diff) > 2.4 && speed < 100) {
+    // Facing the wrong way at low speed: back up while turning instead of
+    // swinging a wide U-turn that leaves the road (and the kerb).
+    throttle = -0.8;
+    steer = -steer;
+  }
   let handbrake = Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350;
-  // Stuck against something: back up briefly, then try again.
+  // Stuck against something: back up briefly, steering toward the open road.
   if (Math.abs(car.speed) < 25 && throttle > 0) {
     car.stuckTimer += dt;
     if (car.stuckTimer > 1.4) {
@@ -278,7 +394,11 @@ function stepOfficer(officer, police, ctx, dt) {
     if (ctx.audio) ctx.audio.punch();
     if (ctx.effects) ctx.effects.addSparks(player.x, player.y);
   }
-  if (officer.arrest >= POLICE.arrestSeconds && ctx.onBusted) ctx.onBusted();
+  if (officer.arrest >= POLICE.arrestSeconds && ctx.onBusted) {
+    // One bust per hold: let go, so the same officer cannot bust twice.
+    officer.arrest = 0;
+    ctx.onBusted();
+  }
 }
 
 /** Two cars parked across the road ahead of the player, lights flashing. */
@@ -329,6 +449,9 @@ function placeRoadblock(police, ctx) {
     blockCar.reverseUntil = 0;
     blockCar.blockUntil = ctx.time + 25;
     blockCar.boxSide = 1;
+    // The road it blocks is the road it will chase along once it rolls.
+    blockCar.axis = vertical ? 'v' : 'h';
+    blockCar.roadPos = vertical ? vRoad.x : hRoad.y;
     ctx.vehicles.push(blockCar);
     police.cars.push(blockCar);
     police.roadblockCars.push(blockCar);
@@ -370,14 +493,21 @@ export function stepPolice(police, ctx, dt) {
     return;
   }
 
-  // Spawn the pack the wanted level calls for, a unit or two at a time.
+  // Spawn the pack the wanted level calls for, a unit or two at a time — but
+  // only while the trail is fresh or a unit is still in the area. Without that
+  // gate the pack would teleport onto an escaping player forever and the heat
+  // could never decay.
   police.spawnTimer -= dt;
   if (police.spawnTimer <= 0) {
     police.spawnTimer = 0.5;
-    const wantCars = POLICE.carsByStars[police.wanted] || 0;
-    const wantOfficers = POLICE.officersByStars[police.wanted] || 0;
-    if (police.cars.length < wantCars) spawnPoliceCar(police, ctx);
-    if (police.officers.length < wantOfficers) spawnOfficer(police, ctx);
+    const trailFresh = ctx.time - police.lastCrimeAt < 8;
+    const unitNear = nearestPoliceDistance(police, ctx.player.x, ctx.player.y) < 1200;
+    if (trailFresh || unitNear) {
+      const wantCars = POLICE.carsByStars[police.wanted] || 0;
+      const wantOfficers = POLICE.officersByStars[police.wanted] || 0;
+      if (police.cars.length < wantCars) spawnPoliceCar(police, ctx);
+      if (police.officers.length < wantOfficers) spawnOfficer(police, ctx);
+    }
   }
 
   // Roadblocks at high heat, while the player is driving fast.

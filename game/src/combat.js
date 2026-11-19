@@ -73,6 +73,10 @@ function bulletHitsCar(bullet, car) {
 }
 
 function hurtPed(combat, ped, amount, ctx) {
+  // Only the first hit on a fresh ped counts as "hitting a ped" — emptying a
+  // magazine into one person is one assault, not one per bullet. The kill is
+  // always its own, heavier crime.
+  const wasUnhurt = ped.health >= 100;
   ped.health -= amount;
   if (ped.health <= 0) {
     setPedDown(ped, ctx.time, ped.officer ? 4 : 6);
@@ -81,10 +85,10 @@ function hurtPed(combat, ped, amount, ctx) {
     return true;
   }
   if (ped.officer) {
-    if (ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer);
+    if (wasUnhurt && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer);
   } else {
     panicPed(ped, ctx.player.x, ctx.player.y, ctx.time);
-    if (ctx.addWanted) ctx.addWanted(POLICE.crime.hitPed);
+    if (wasUnhurt && ctx.addWanted) ctx.addWanted(POLICE.crime.hitPed);
   }
   return false;
 }
