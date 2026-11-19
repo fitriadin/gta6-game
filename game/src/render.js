@@ -252,7 +252,7 @@ export function createRenderer(canvas) {
       // A pursuit car's light bar flashes red and blue, alternating with the
       // clock — neighbouring cars are half a beat out of phase.
       if (car.model === 'police' && car.state === 'police') {
-        const phase = (state.time * 4 + car.id * 0.5) % 2;
+        const phase = (state.time * 4 + car.id) % 2;
         const red = phase < 1;
         const glow = context.createRadialGradient(car.x, car.y, 4, car.x, car.y, 52);
         glow.addColorStop(0, red ? 'rgba(229, 83, 75, 0.5)' : 'rgba(59, 130, 246, 0.5)');

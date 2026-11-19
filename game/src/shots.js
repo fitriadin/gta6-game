@@ -89,8 +89,8 @@ export function stageShot(name, state) {
     car.vx = 0;
     car.vy = 480;
     // Three pursuit cars: two tight behind in the same lane, one pulling
-    // alongside to box the player in. Odd ids flash red, even ones blue, so
-    // the frozen frame shows both colours.
+    // alongside to box the player in. Neighbouring cars flash opposite
+    // colours, so the frozen frame shows both red and blue.
     const pursuit = [
       { x: 2626, y: 1690, angle: Math.PI },
       { x: 2626, y: 1820, angle: Math.PI },
@@ -118,7 +118,7 @@ export function stageShot(name, state) {
       state.effects.addSkid(2618, 1620, 2604, 1720);
       state.effects.addSkid(2646, 1620, 2632, 1720);
     }
-    state.cam.snap(state.player.x, state.player.y);
+    state.cam.snap(state.player.x, state.player.y + 90);
     return { screen: SCREEN_PLAY };
   }
 

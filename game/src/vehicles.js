@@ -80,8 +80,10 @@ export function carOverlapDepth(city, model, x, y, angle) {
 }
 
 export function makeVehicle(model, colour, x, y, angle, state = 'parked') {
+  const id = nextId;
+  nextId += 1;
   return {
-    id: nextId,
+    id,
     model,
     colour,
     x,
