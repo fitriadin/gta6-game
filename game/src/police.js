@@ -34,14 +34,21 @@ export function createPolice() {
     /** Game time of the most recent crime — the pack only reinforces while the
      * trail is fresh or a unit is still in the area, so a clean escape is real. */
     lastCrimeAt: -100,
+    /** What the most recent crime was ({ reason, time }) — a debug handle so a
+     * playtest can tell a ped strike from a wrecked car instead of guessing
+     * from whatever happened to be nearby when the star appeared. */
+    lastCrime: null,
   };
 }
 
-/** Raise the heat, clamped at five stars; any crime resets the clean timer. */
-export function addWanted(police, amount, time) {
+/** Raise the heat, clamped at five stars; any crime resets the clean timer.
+ * `reason` (e.g. 'hitPed', 'destroyCar') is recorded for debugging; scripted
+ * wanted changes (mission starts) pass none. */
+export function addWanted(police, amount, time, reason = null) {
   police.wanted = Math.min(POLICE.maxStars, Math.max(0, police.wanted + amount));
   police.cleanTime = 0;
   police.lastCrimeAt = time;
+  if (reason) police.lastCrime = { reason, time };
   return police.wanted;
 }
 
@@ -606,7 +613,7 @@ function checkPedStrikes(police, ctx) {
     const killed = speed > 300;
     ped.health = killed ? 0 : Math.max(0, ped.health - 50);
     setPedDown(ped, ctx.time, killed ? 6 : 3);
-    addWanted(police, killed ? POLICE.crime.killPed : POLICE.crime.hitPed, ctx.time);
+    addWanted(police, killed ? POLICE.crime.killPed : POLICE.crime.hitPed, ctx.time, killed ? 'killPed' : 'hitPed');
     scareNearby(ctx.peds, ped.x, ped.y, 220, ctx.time);
     if (ctx.effects) ctx.effects.addSparks(ped.x, ped.y);
     if (ctx.audio) ctx.audio.crash(0.4);

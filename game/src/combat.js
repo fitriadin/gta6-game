@@ -54,7 +54,7 @@ export function tryShoot(combat, origin, angle, options, ctx) {
     const near = nearestPoliceDistance(ctx.police, origin.x, origin.y);
     if (near < 600 && ctx.time - combat.lastShotNearPolice > 2) {
       combat.lastShotNearPolice = ctx.time;
-      if (ctx.addWanted) ctx.addWanted(POLICE.crime.shootNearPolice);
+      if (ctx.addWanted) ctx.addWanted(POLICE.crime.shootNearPolice, 'shootNearPolice');
     }
   }
   return bullet;
@@ -80,15 +80,15 @@ function hurtPed(combat, ped, amount, ctx) {
   ped.health -= amount;
   if (ped.health <= 0) {
     setPedDown(ped, ctx.time, ped.officer ? 4 : 6);
-    if (ctx.addWanted) ctx.addWanted(ped.officer ? POLICE.crime.downOfficer : POLICE.crime.killPed);
+    if (ctx.addWanted) ctx.addWanted(ped.officer ? POLICE.crime.downOfficer : POLICE.crime.killPed, ped.officer ? 'downOfficer' : 'killPed');
     if (!ped.officer) scareNearby(ctx.peds, ped.x, ped.y, 260, ctx.time);
     return true;
   }
   if (ped.officer) {
-    if (wasUnhurt && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer);
+    if (wasUnhurt && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer, 'hitOfficer');
   } else {
     panicPed(ped, ctx.player.x, ctx.player.y, ctx.time);
-    if (wasUnhurt && ctx.addWanted) ctx.addWanted(POLICE.crime.hitPed);
+    if (wasUnhurt && ctx.addWanted) ctx.addWanted(POLICE.crime.hitPed, 'hitPed');
   }
   return false;
 }
@@ -159,7 +159,7 @@ export function stepCombat(combat, ctx, dt) {
         if (!bulletHitsCar(bullet, car)) continue;
         if (ctx.effects) ctx.effects.addSparks(bullet.x, bullet.y);
         damageCar(car, COMBAT.pistolDamage);
-        if (car.state === 'police' && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer);
+        if (car.state === 'police' && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer, 'hitOfficer');
         spent = true;
         break;
       }
@@ -189,7 +189,7 @@ export function checkExplosions(ctx) {
     if (ctx.effects) ctx.effects.addExplosion(car.x, car.y);
     if (ctx.audio) ctx.audio.explosion();
     if (ctx.cam) ctx.cam.addShake(16);
-    if (ctx.addWanted) ctx.addWanted(POLICE.crime.destroyCar);
+    if (ctx.addWanted) ctx.addWanted(POLICE.crime.destroyCar, 'destroyCar');
 
     // The driver goes down with the car: out on foot, badly hurt.
     if (ctx.player.inCar === car) {
@@ -211,7 +211,7 @@ export function checkExplosions(ctx) {
         panicPed(ped, car.x, car.y, ctx.time);
       }
     }
-    if (pedKilled && ctx.addWanted) ctx.addWanted(POLICE.crime.killPed);
+    if (pedKilled && ctx.addWanted) ctx.addWanted(POLICE.crime.killPed, 'killPed');
     const playerDistance = Math.hypot(ctx.player.x - car.x, ctx.player.y - car.y);
     if (playerDistance < COMBAT.explosionRadius && ctx.player.inCar !== car) {
       const falloff = 1 - playerDistance / COMBAT.explosionRadius;

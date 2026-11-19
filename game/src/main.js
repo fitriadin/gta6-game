@@ -78,8 +78,8 @@ const state = {
 };
 
 /** Raise the heat and keep the HUD's copy in step. */
-function raiseWanted(amount) {
-  addWanted(state.police, amount, state.time);
+function raiseWanted(amount, reason = null) {
+  addWanted(state.police, amount, state.time, reason);
   state.wanted = state.police.wanted;
 }
 
@@ -513,7 +513,7 @@ function runGame() {
         audio.door();
         audio.steal();
         const wasClean = state.police.wanted === 0;
-        raiseWanted(POLICE.crime.steal);
+        raiseWanted(POLICE.crime.steal, 'steal');
         showToast(
           occupied
             ? `You pulled the driver out of the ${car.model}!`
