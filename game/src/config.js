@@ -160,10 +160,15 @@ export const MISSIONS = {
   /** Money each mission pays, by mission id. */
   rewards: { m1: 250, m2: 400, m3: 500, m4: 800, m5: 900, m6: 1500 },
   /** Where the rival cars start the warehouse fight (roads around the warehouse). */
+  // Rival spawns sit ~1040 out (two blocks) on the roads into the M4 start:
+  // at 520 they converged on the player in under a second and rammed the car
+  // to a wreck before a shot could land (playtest run 5: 2 rivals wrecked,
+  // then wasted after 2s). Two blocks gives the player time to get rolling
+  // and pick them off as they arrive.
   rivalSpawns: [
-    { x: 2218, y: 2340, angle: Math.PI },
-    { x: 1698, y: 2860, angle: Math.PI / 2 },
-    { x: 2738, y: 2860, angle: -Math.PI / 2 },
+    { x: 2218, y: 1820, angle: Math.PI },
+    { x: 1178, y: 2860, angle: Math.PI / 2 },
+    { x: 3258, y: 2860, angle: -Math.PI / 2 },
   ],
   points: {
     // M1: Vera's pickup on the Downtown avenue, delivery down to the Marina.
