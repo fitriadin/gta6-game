@@ -28,9 +28,10 @@ export function stageShot(name, state) {
   }
 
   // start: the title over the city, framed with the beach and sea on the left and
-  // downtown's towers on the right.
-  state.player.x = 1300;
-  state.player.y = 2100;
+  // downtown's towers on the right. The player stands on the beach road, clear of
+  // the menu buttons.
+  state.player.x = 880;
+  state.player.y = 2300;
   state.player.angle = Math.PI;
   state.money = 0;
   state.wanted = 0;
