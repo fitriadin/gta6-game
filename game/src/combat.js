@@ -159,6 +159,7 @@ export function stepCombat(combat, ctx, dt) {
         if (!bulletHitsCar(bullet, car)) continue;
         if (ctx.effects) ctx.effects.addSparks(bullet.x, bullet.y);
         damageCar(car, COMBAT.pistolDamage);
+        car.playerDamage = (car.playerDamage || 0) + COMBAT.pistolDamage;
         if (car.state === 'police' && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer, 'hitOfficer');
         spent = true;
         break;
@@ -189,7 +190,20 @@ export function checkExplosions(ctx) {
     if (ctx.effects) ctx.effects.addExplosion(car.x, car.y);
     if (ctx.audio) ctx.audio.explosion();
     if (ctx.cam) ctx.cam.addShake(16);
-    if (ctx.addWanted) ctx.addWanted(POLICE.crime.destroyCar, 'destroyCar');
+    // Destroying a car is a crime — but only if the PLAYER destroyed it. The
+    // old code blamed the player for every explosion in the city: a chain
+    // blast set off two more cars and cost +3 stars at once (run 7's M3
+    // escape), and a police car ramming traffic into a wall did the same.
+    // The star fires only when the player's own damage to this car is
+    // substantial (one bullet is 34; a hard ram is ~7), and never for the
+    // player's own car — wrecking your own ride is not a crime.
+    if (
+      ctx.addWanted &&
+      car.state !== 'player' &&
+      (car.playerDamage || 0) >= COMBAT.destroyAttribution
+    ) {
+      ctx.addWanted(POLICE.crime.destroyCar, 'destroyCar');
+    }
 
     // The driver goes down with the car: out on foot, badly hurt.
     if (ctx.player.inCar === car) {

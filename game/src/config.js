@@ -152,6 +152,10 @@ export const COMBAT = {
   explosionDamage: 70,
   /** Car damage at which the car catches fire and blows up. */
   wreckDamage: 100,
+  /** Damage the player must have dealt to a car for its explosion to count
+   * as the player's crime (one bullet is 34; a hard ram is ~7). Below this,
+   * the car was wrecked by someone — or something — else. */
+  destroyAttribution: 30,
 };
 
 /** Missions: the story campaign's tuning — rewards, timers, and every marker
