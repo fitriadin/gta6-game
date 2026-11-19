@@ -320,7 +320,7 @@ function runGame() {
       stepPlayerVehicle(
         car,
         city,
-        { throttle: -move.y, steer: move.x, handbrake: input.sprinting() },
+        { throttle: input.throttle(), steer: input.steer(), handbrake: input.sprinting() },
         STEP,
         effects,
         onCrash,

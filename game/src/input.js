@@ -97,6 +97,15 @@ export function createInput(target) {
       const length = Math.hypot(x, y);
       return { x: x / length, y: y / length };
     },
+    /** Driving throttle, independent of steering: +1 for W, -1 for S. Unlike
+     * move(), holding W+A still gives full throttle (not 0.707 of it). */
+    throttle() {
+      return (held.up ? 1 : 0) - (held.down ? 1 : 0);
+    },
+    /** Driving steering, independent of throttle: +1 for D, -1 for A. */
+    steer() {
+      return (held.right ? 1 : 0) - (held.left ? 1 : 0);
+    },
     sprinting() {
       return held.sprint;
     },

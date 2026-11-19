@@ -464,7 +464,7 @@ function stepTrafficCar(car, city, vehicles, player, dt) {
 }
 
 /** Push overlapping cars apart and trade a little speed; returns true if the player was hit. */
-function collideCars(vehicles, onPlayerCrash) {
+function collideCars(vehicles, city, onPlayerCrash) {
   let playerHit = false;
   for (let i = 0; i < vehicles.length; i += 1) {
     const a = vehicles[i];
@@ -483,6 +483,10 @@ function collideCars(vehicles, onPlayerCrash) {
       const overlap = (minDistance - distance) / 2;
       const aMoves = a.state !== 'parked';
       const bMoves = b.state !== 'parked';
+      const prevAX = a.x;
+      const prevAY = a.y;
+      const prevBX = b.x;
+      const prevBY = b.y;
       if (aMoves) {
         a.x -= nx * overlap;
         a.y -= ny * overlap;
@@ -490,6 +494,15 @@ function collideCars(vehicles, onPlayerCrash) {
       if (bMoves) {
         b.x += nx * overlap;
         b.y += ny * overlap;
+      }
+      // A shove must never push a car into a building: step back out of it.
+      if (aMoves && carHitsBuilding(city, a.model, a.x, a.y, a.angle)) {
+        a.x = prevAX;
+        a.y = prevAY;
+      }
+      if (bMoves && carHitsBuilding(city, b.model, b.x, b.y, b.angle)) {
+        b.x = prevBX;
+        b.y = prevBY;
       }
       const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
       if (closing > 60) {
@@ -534,5 +547,5 @@ export function stepTraffic(vehicles, city, dt, focus, player, onPlayerCrash) {
     }
     if (car.damage > 55) car.cruise = Math.min(car.cruise, TRAFFIC.cruiseMin * 0.7);
   }
-  collideCars(vehicles, onPlayerCrash);
+  collideCars(vehicles, city, onPlayerCrash);
 }
