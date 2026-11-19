@@ -349,6 +349,20 @@ function stepPoliceCar(car, police, ctx, dt) {
     // Slow down for the intersection turn, or the car blows straight past it.
     braking = true;
   }
+  // A pursuit car touching the player's car backs off instead of leaning on
+  // it. A cop glued to the player's bumper can never be shaken — the shove
+  // herds the player into buildings and traffic, the car takes damage until
+  // the engine chokes, and the chase ends in a wreck every time (eight escape
+  // probes, zero successes). Backing off after contact gives the player a
+  // window to pull away, and the chase stays a chase: the cop charges back in,
+  // touches, and falls back again, losing a little ground each cycle.
+  if (player.inCar) {
+    const touch = Math.hypot(car.x - player.inCar.x, car.y - player.inCar.y);
+    if (touch < carRadius(car.model) + carRadius(player.inCar.model) + 6) {
+      braking = true;
+      throttle = 0;
+    }
+  }
   let steer = clamp(diff * 2.4, -1, 1);
   let handbrake = braking || (Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350);
   if (braking) throttle = 0;
