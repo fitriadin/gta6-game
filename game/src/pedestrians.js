@@ -388,7 +388,15 @@ export function stepPedestrians(peds, city, vehicles, player, dt, focus, time) {
         const speed = Math.abs(car.speed);
         const distance = Math.hypot(car.x - ped.x, car.y - ped.y);
         const threat = car.state === 'player' ? PEDS.panicRadius : 90;
-        if (distance < threat && speed > PEDS.panicSpeed * 0.55) {
+        // The player's car scares peds from 100 u/s up — below the 120 crime
+        // threshold, so a ped in the road flees before a car fast enough to
+        // hurt them arrives. At the old 143 threshold there was a dead zone
+        // (120–143) where a car could hit a ped who never panicked: run 2's
+        // M3 escape took a +1 at 141 that way. Traffic keeps the old
+        // threshold — peds fleeing from every passing car would empty the
+        // sidewalks.
+        const panicSpeed = car.state === 'player' ? 100 : PEDS.panicSpeed * 0.55;
+        if (distance < threat && speed > panicSpeed) {
           panicPed(ped, car.x, car.y, time);
           break;
         }
