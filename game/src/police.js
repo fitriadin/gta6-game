@@ -378,13 +378,20 @@ function stepPoliceCar(car, police, ctx, dt) {
       car.recoverUntil = Math.max(car.recoverUntil || 0, ctx.time + 1.5);
     }
   }
-  if (ctx.time < (car.recoverUntil || 0)) {
-    braking = true;
-    throttle = 0;
-  }
+  const recovering = ctx.time < (car.recoverUntil || 0);
   let steer = clamp(diff * 2.4, -1, 1);
   let handbrake = braking || (Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350);
   if (braking) throttle = 0;
+  if (recovering) {
+    // Back off: reverse away from the player's car to clear its path. Braking
+    // alone leaves the pursuit sitting in the way, welded to the player's
+    // bumper by the overlap — the player cannot pull away through it. Reverse
+    // throttle brakes hard while the car is still rolling forward, then backs
+    // it straight away (it faces the player, so reverse is away).
+    throttle = -0.8;
+    steer = 0;
+    handbrake = false;
+  }
   // Reversing is a committed manoeuvre on a timer, not a per-step decision: a
   // per-step rule flips the moment the reversing car passes 100 u/s and the car
   // ends up seesawing forward and back in place. Two triggers share the timer:
