@@ -5,6 +5,7 @@
 import { CITY, FONT, MINIMAP, PALETTE, PLAYER, VIEW } from './config.js';
 import { districtAt } from './city.js';
 import { vehicleKmh } from './vehicles.js';
+import { MISSION_DEFS } from './missions.js';
 
 const STAR = '★';
 const fonts = new Map();
@@ -172,7 +173,14 @@ function drawCrosshair(context, state) {
 }
 
 function drawObjective(context, state) {
-  const objective = state.objective || 'Explore Solmar Bay';
+  // On a job, the pill leads with the mission number (M3/6); free roam shows
+  // the plain objective.
+  let objective = state.objective || 'Explore Solmar Bay';
+  const active = state.missions && state.missions.active;
+  if (active) {
+    const index = MISSION_DEFS.findIndex((def) => def.id === active.id);
+    if (index >= 0) objective = `M${index + 1}/6 · ${objective}`;
+  }
   context.font = font(17, 700);
   const width = context.measureText(objective).width + 44;
   const x = (VIEW.width - width) / 2;
@@ -345,6 +353,32 @@ function drawMinimap(context, state) {
       context.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
       context.fill();
     }
+  }
+  // The mission marker: a pulsing gold diamond. Off the minimap's range it
+  // clamps to the rim, so the player always knows which way the job is.
+  if (state.missionTarget) {
+    const p = toMap(state.missionTarget.x, state.missionTarget.y);
+    let mx = p.x - cx;
+    let my = p.y - cy;
+    const distance = Math.hypot(mx, my);
+    const max = radius - 8;
+    if (distance > max) {
+      mx = (mx / distance) * max;
+      my = (my / distance) * max;
+    }
+    const pulse = 1 + 0.18 * Math.sin(state.time * 5);
+    const size = 6.5 * pulse;
+    context.save();
+    context.translate(cx + mx, cy + my);
+    context.rotate(Math.PI / 4);
+    context.fillStyle = PALETTE.accent;
+    context.strokeStyle = '#14100a';
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.rect(-size / 2, -size / 2, size, size);
+    context.fill();
+    context.stroke();
+    context.restore();
   }
   // The player: a white arrow pointing where they face.
   context.save();

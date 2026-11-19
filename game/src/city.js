@@ -169,15 +169,17 @@ export function generateCity(seed) {
     }
   }
 
-  // A few cars parked along the kerb near downtown for the player to walk up to.
-  // Nose-in kerb parking cannot fit between the avenue and its buildings (a car
-  // is longer than the kerb strip is deep), so three of them park parallel along
-  // the beach promenade instead, where no building can ever crowd them.
+  // A few cars parked along the kerb for the player to walk up to. Nose-in kerb
+  // parking cannot fit between the avenue and its buildings (a car is longer
+  // than the kerb strip is deep), so all four park parallel along the beach
+  // promenade, where no building can ever crowd them — a car left half on the
+  // block margin west of the avenue used to catch the building line when its
+  // new owner drove straight south.
   const kerbSpots = [
     { x: 590, y: 900, angle: 0 },
     { x: 590, y: 1600, angle: Math.PI },
     { x: 590, y: 2300, angle: 0 },
-    { x: 2650 - CITY.avenueWidth / 2 - 26, y: 2150, angle: Math.PI / 2 },
+    { x: 590, y: 3000, angle: Math.PI },
   ];
   for (const spot of kerbSpots) {
     parkedCars.push({ ...spot, colour: pick(CAR_COLOURS), model: pick(['sedan', 'taxi', 'sedan', 'van']) });

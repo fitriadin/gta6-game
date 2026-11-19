@@ -1,11 +1,33 @@
-// The screenshot scenes behind ?shot=start|play|drive|chase (chunk 4 adds mission).
-// Each one stages the real game at a fixed, scenic state from the given seed, so the
-// same seed always gives the same frame. The main loop paints the staged scene twice
+// The screenshot scenes behind ?shot=start|play|drive|chase|mission. Each one
+// stages the real game at a fixed, scenic state from the given seed, so the same
+// seed always gives the same frame. The main loop paints the staged scene twice
 // and then sets window.__shotReady for the screenshot.
 
 import { SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 import { stepPlayer } from './player.js';
 import { addTrafficCar, makeVehicle, stealVehicle } from './vehicles.js';
+import { startMission } from './missions.js';
+
+/** The small context the mission shot needs to start a real mission. */
+function missionShotCtx(state) {
+  return {
+    city: state.city,
+    player: state.player,
+    vehicles: state.vehicles,
+    police: state.police,
+    time: state.time,
+    addWanted(amount) {
+      state.police.wanted = Math.min(5, Math.max(0, state.police.wanted + amount));
+      state.wanted = state.police.wanted;
+    },
+    setObjective(text) {
+      state.objective = text;
+    },
+    setTarget(x, y) {
+      state.missionTarget = x === null ? null : { x, y };
+    },
+  };
+}
 
 /**
  * Set `state` to the named scene and return the screen to draw. Unknown names stage
@@ -13,11 +35,11 @@ import { addTrafficCar, makeVehicle, stealVehicle } from './vehicles.js';
  */
 export function stageShot(name, state) {
   if (name === 'play') {
-    // On foot in Downtown, next to a parked car so the "press E" prompt shows,
-    // with the HUD and minimap live.
-    state.player.x = 2612;
-    state.player.y = 2150;
-    state.player.angle = Math.PI;
+    // On foot by the beach promenade, next to a parked kerb car so the "press E"
+    // prompt shows, with the HUD and minimap live.
+    state.player.x = 630;
+    state.player.y = 2300;
+    state.player.angle = -Math.PI / 2;
     state.player.health = 100;
     state.money = 0;
     state.wanted = 0;
@@ -119,6 +141,30 @@ export function stageShot(name, state) {
       state.effects.addSkid(2646, 1620, 2632, 1720);
     }
     state.cam.snap(state.player.x, state.player.y + 90);
+    return { screen: SCREEN_PLAY };
+  }
+
+  if (name === 'mission') {
+    // A mission in progress: Kai driving Vera's package south down the Downtown
+    // avenue toward the Marina, the pulsing gold marker ahead of the car, the
+    // mission objective pill live in the HUD, and the marker on the minimap.
+    // The real first mission starts, so the pill, marker and minimap are the
+    // game's own — then Kai is put in a car already on the way.
+    state.money = 150;
+    state.wanted = 0;
+    startMission(state.missions, 'm1', missionShotCtx(state));
+    const car = makeVehicle('sedan', '#c94f43', 2626, 3000, Math.PI, 'parked');
+    state.vehicles.push(car);
+    stealVehicle(state.player, car);
+    car.speed = 430;
+    car.vx = 0;
+    car.vy = 430;
+    // A taxi ahead in the same lane, a van coming the other way, and a car
+    // crossing on the east-west road — the street is alive around the job.
+    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2626, y: 2730, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 280, speed: 280 });
+    addTrafficCar(state.vehicles, { model: 'van', colour: '#5f9e6e', x: 2674, y: 3150, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 240, speed: 240 });
+    addTrafficCar(state.vehicles, { model: 'sedan', colour: '#3f7fc9', x: 2350, y: 2884, angle: Math.PI / 2, axis: 'h', roadPos: 2860, dir: 1, cruise: 260, speed: 260 });
+    state.cam.snap(state.player.x, state.player.y);
     return { screen: SCREEN_PLAY };
   }
 

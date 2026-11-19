@@ -4,15 +4,16 @@
 // game over and controls. Vehicles, pedestrians, effects, audio, police and combat
 // all step inside the same loop, so pausing freezes the whole city at once.
 //
-// ?seed=N fixes the city. ?shot=start|play|drive|chase (with &seed=N) stages that
-// scene instead of running the loop, paints it twice and sets window.__shotReady
-// for a screenshot.
+// ?seed=N fixes the city. ?shot=start|play|drive|chase|mission (with &seed=N)
+// stages that scene instead of running the loop, paints it twice and sets
+// window.__shotReady for a screenshot.
 import { CAMERA, CITY, DEFAULT_SEED, PEDS, PLAYER, POLICE, STEP, VEHICLES, VIEW } from './config.js';
 import { generateCity } from './city.js';
 import { createCamera } from './camera.js';
 import { createPlayer, stepPlayer } from './player.js';
 import { ACTION_CLICK, ACTION_CONFIRM, ACTION_INTERACT, ACTION_MELEE, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_CONTROLS, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+import { createRenderer, SCREEN_BRIEFING, SCREEN_COMPLETE, SCREEN_CONTROLS, SCREEN_ENDING, SCREEN_MISSIONS, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+import { createMissions, failActiveMission, MISSION_DEFS, missionIndex, nextMissionId, startMission, stepMissions } from './missions.js';
 import { createVehicles, exitVehicle, makeVehicle, stealVehicle, stepPlayerVehicle, stepTraffic } from './vehicles.js';
 import { createPedestrians, freeDriver, scareNearby, stepPedestrians } from './pedestrians.js';
 import { addWanted, clearPolice, createPolice, stepPolice } from './police.js';
@@ -57,6 +58,11 @@ const state = {
   wanted: 0,
   objective: 'Explore Solmar Bay',
   missionsCompleted: [],
+  missions: createMissions(),
+  missionTarget: null,
+  briefingMission: null,
+  completeMission: null,
+  screen: SCREEN_TITLE,
   muted: false,
   savedCar: null,
   hasSave: hasSave(),
@@ -101,6 +107,7 @@ function runGame() {
   input.setCoordinateMapper((x, y) => renderer.clientToLogical(x, y));
   let screen = SCREEN_TITLE;
   let controlsReturn = SCREEN_TITLE;
+  let briefingReturn = SCREEN_PLAY;
   let accumulator = 0;
   let last = performance.now();
   let lastMenuY = 0;
@@ -118,10 +125,128 @@ function runGame() {
     status.textContent = message;
   }
 
+  /** The context the missions module works with: the live world, plus the
+   * callbacks that turn mission events into screens, money and sound. */
+  function missionCtx() {
+    return {
+      city,
+      player,
+      vehicles,
+      peds,
+      police: state.police,
+      effects,
+      audio,
+      time: state.time,
+      completed: state.missionsCompleted,
+      addWanted: raiseWanted,
+      forgiveWanted(amount) {
+        addWanted(state.police, -amount, state.time);
+        state.wanted = state.police.wanted;
+      },
+      setObjective(text) {
+        state.objective = text;
+      },
+      setTarget(x, y) {
+        state.missionTarget = x === null ? null : { x, y };
+      },
+      toast: showToast,
+      onBriefing(def) {
+        state.briefingMission = def;
+        briefingReturn = SCREEN_PLAY;
+        screen = SCREEN_BRIEFING;
+        audio.blip();
+        announce(`Mission briefing: ${def.title}.`);
+      },
+      onComplete(def) {
+        state.money += def.reward;
+        if (!state.missionsCompleted.includes(def.id)) state.missionsCompleted.push(def.id);
+        saveGame(state);
+        audio.missionComplete();
+        if (def.id === 'm6') {
+          state.completeMission = null;
+          screen = SCREEN_ENDING;
+          announce('Story complete. Solmar Bay is yours — for now.');
+        } else {
+          state.completeMission = def;
+          screen = SCREEN_COMPLETE;
+          announce(`Mission complete: ${def.title}. You earned $${def.reward.toLocaleString('en-US')}.`);
+        }
+      },
+      onFail(def, reason) {
+        audio.missionFail();
+        showToast(`Mission failed — ${reason}`);
+        state.objective = 'Explore Solmar Bay';
+        state.missionTarget = null;
+        announce(`Mission failed: ${reason}`);
+      },
+    };
+  }
+
+  function acceptBriefing() {
+    const def = state.briefingMission;
+    if (!def) return;
+    state.briefingMission = null;
+    startMission(state.missions, def.id, missionCtx());
+    audio.missionStart();
+    screen = SCREEN_PLAY;
+    state.fireArmedAt = state.time + 0.4;
+    announce(`Mission started: ${def.title}.`);
+  }
+
+  function cancelBriefing() {
+    state.briefingMission = null;
+    screen = briefingReturn;
+    announce('Mission declined.');
+  }
+
+  function activateMissionItem(index) {
+    const def = MISSION_DEFS[index];
+    if (!def) return;
+    // Only the next uncompleted job can start; the rest are done or locked.
+    if (def.id !== nextMissionId(state.missionsCompleted) || state.missions.active) {
+      audio.blip(220, 0.1, 0.1);
+      return;
+    }
+    state.briefingMission = def;
+    briefingReturn = SCREEN_MISSIONS;
+    screen = SCREEN_BRIEFING;
+    audio.blip();
+    announce(`Mission briefing: ${def.title}.`);
+  }
+
+  /** Wasted ends the run, not the story: money and finished missions stay, the
+   * player wakes up back at the spawn with a clean slate. */
+  function respawnAfterWasted() {
+    if (player.inCar) {
+      if (player.inCar.state === 'wreck') player.inCar = null;
+      else exitVehicle(player, player.inCar, city);
+    }
+    player.health = PLAYER.maxHealth;
+    player.x = city.spawn.x;
+    player.y = city.spawn.y;
+    player.angle = city.spawn.angle;
+    clearPolice(state.police, vehicles, peds);
+    state.wanted = 0;
+    state.banner = null;
+    state.missions = createMissions();
+    state.missionTarget = null;
+    state.briefingMission = null;
+    state.completeMission = null;
+    state.objective = 'Explore Solmar Bay';
+    cam.snap(player.x, player.y);
+    state.fireArmedAt = state.time + 0.4;
+    screen = SCREEN_PLAY;
+    announce('Back on your feet. The city is still yours to take.');
+  }
+
   function newGame() {
     state.money = 0;
     state.wanted = 0;
     state.missionsCompleted = [];
+    state.missions = createMissions();
+    state.missionTarget = null;
+    state.briefingMission = null;
+    state.completeMission = null;
     state.objective = 'Explore Solmar Bay';
     state.savedCar = null;
     state.banner = null;
@@ -150,9 +275,14 @@ function runGame() {
     }
     applySave(state, save);
     audio.setMuted(state.muted);
-    // Wanted never persists: a loaded game starts with a clean slate.
+    // Wanted never persists: a loaded game starts with a clean slate. Neither
+    // does a half-finished job — the next mission waits at its marker.
     state.police = createPolice();
     state.combat = createCombat();
+    state.missions = createMissions();
+    state.missionTarget = null;
+    state.briefingMission = null;
+    state.completeMission = null;
     state.wanted = 0;
     state.banner = null;
     if (state.savedCar) {
@@ -190,6 +320,8 @@ function runGame() {
    * wakes up at the police station with a clean slate, and the banner says so. */
   function busted() {
     if (state.police.wanted <= 0) return;
+    // Busted mid-job: the job is blown, but finished missions stay finished.
+    if (state.missions.active) failActiveMission(state.missions, missionCtx(), 'Busted — the job is blown.');
     if (player.inCar) exitVehicle(player, player.inCar, city);
     const lost = state.money - Math.floor(state.money * 0.9);
     state.money = Math.floor(state.money * 0.9);
@@ -250,7 +382,12 @@ function runGame() {
     const item = items[index];
     if (!item) return;
     if (item.id === 'resume') resumeGame();
-    else if (item.id === 'save') {
+    else if (item.id === 'missions') {
+      screen = SCREEN_MISSIONS;
+      // Preselect the next job in the list.
+      state.menuIndex = Math.max(0, missionIndex(nextMissionId(state.missionsCompleted)));
+      announce('Missions.');
+    } else if (item.id === 'save') {
       state.saveMessage = saveGame(state) ? 'Saved.' : 'Could not save in this browser.';
     } else if (item.id === 'controls') openControls(SCREEN_PAUSED);
     else if (item.id === 'restart') newGame();
@@ -311,7 +448,50 @@ function runGame() {
     }
 
     if (screen === SCREEN_OVER) {
-      if (actions & (ACTION_CONFIRM | ACTION_CLICK)) newGame();
+      if (actions & (ACTION_CONFIRM | ACTION_CLICK)) respawnAfterWasted();
+      return;
+    }
+
+    if (screen === SCREEN_BRIEFING) {
+      if (actions & ACTION_CONFIRM) acceptBriefing();
+      else if (actions & ACTION_PAUSE) cancelBriefing();
+      else if (actions & ACTION_CLICK) acceptBriefing();
+      return;
+    }
+
+    if (screen === SCREEN_MISSIONS) {
+      handleMenuKeys(move.y, MISSION_DEFS.length);
+      if (actions & ACTION_PAUSE) {
+        screen = SCREEN_PAUSED;
+        state.menuIndex = 0;
+      } else if (actions & ACTION_CONFIRM) activateMissionItem(state.menuIndex);
+      else if (actions & ACTION_CLICK) {
+        const mouse = input.mousePosition();
+        const hit = renderer.missionsMenuHit(mouse.x, mouse.y);
+        if (hit >= 0) {
+          state.menuIndex = hit;
+          activateMissionItem(hit);
+        }
+      }
+      return;
+    }
+
+    if (screen === SCREEN_COMPLETE) {
+      if (actions & (ACTION_CONFIRM | ACTION_CLICK)) {
+        state.completeMission = null;
+        screen = SCREEN_PLAY;
+        state.fireArmedAt = state.time + 0.4;
+        announce('Playing.');
+      }
+      return;
+    }
+
+    if (screen === SCREEN_ENDING) {
+      if (actions & (ACTION_CONFIRM | ACTION_CLICK)) {
+        screen = SCREEN_PLAY;
+        state.fireArmedAt = state.time + 0.4;
+        announce('Free roam.');
+      }
       return;
     }
 
@@ -464,11 +644,17 @@ function runGame() {
       addWanted: raiseWanted,
       onPlayerExitCar: (car) => exitVehicle(player, car, city),
     });
+    // Missions run after the explosions, so a rival car that just blew up is
+    // already a wreck when the job counts it — and the heat it caused can be
+    // forgiven before the police see it.
+    stepMissions(state.missions, missionCtx(), STEP);
     state.wanted = state.police.wanted;
     stepEffects(effects, STEP);
     cam.follow(player.x, player.y, STEP);
     cam.update(STEP);
     if (player.health <= 0) {
+      // Wasted mid-job: the job is blown, but finished missions stay finished.
+      if (state.missions.active) failActiveMission(state.missions, missionCtx(), 'Wasted — the job is blown.');
       screen = SCREEN_OVER;
       audio.setEngine(0, false);
       audio.setSiren(0);
@@ -478,6 +664,8 @@ function runGame() {
 
   function frame(now) {
     requestAnimationFrame(frame);
+    // The current screen lives on state too, so the HUD and playtests can see it.
+    state.screen = screen;
     accumulator += Math.min((now - last) / 1000, MAX_FRAME);
     last = now;
     handleActions();
@@ -494,6 +682,9 @@ function runGame() {
     if (document.hidden && screen === SCREEN_PLAY) pauseGame();
   });
 
+  // The title screen shows the saved story progress before Continue is pressed.
+  const existingSave = loadSave();
+  if (existingSave) state.missionsCompleted = [...(existingSave.missionsCompleted || [])];
   announce('Solmar City. Press Enter or click to start.');
   // Debug handle for automated playtests: window.__solmar exposes live state.
   window.__solmar = state;

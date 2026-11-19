@@ -138,6 +138,45 @@ export const COMBAT = {
   wreckDamage: 100,
 };
 
+/** Missions: the story campaign's tuning — rewards, timers, and every marker
+ * point (start markers, delivery points, and where the mission vehicles wait).
+ * All points sit on roads, so a marker is always reachable by car. */
+export const MISSIONS = {
+  /** How close the player must get to a marker to trigger or complete it. */
+  markerRadius: 110,
+  /** The timed delivery's limit, in seconds. */
+  m5TimeLimit: 90,
+  /** Money each mission pays, by mission id. */
+  rewards: { m1: 250, m2: 400, m3: 500, m4: 800, m5: 900, m6: 1500 },
+  /** Where the rival cars start the warehouse fight (roads around the warehouse). */
+  rivalSpawns: [
+    { x: 2218, y: 2340, angle: Math.PI },
+    { x: 1698, y: 2860, angle: Math.PI / 2 },
+    { x: 2738, y: 2860, angle: -Math.PI / 2 },
+  ],
+  points: {
+    // M1: Vera's pickup on the Downtown avenue, delivery down to the Marina.
+    m1Start: { x: 2650, y: 1850 },
+    m1Target: { x: 2650, y: 3300 },
+    // M2: the taxi waits at the Marina rank; Vera's garage is on the west side.
+    m2Start: { x: 2650, y: 3300 },
+    m2Taxi: { x: 1154, y: 3230 },
+    m2Garage: { x: 1178, y: 3380 },
+    // M3: starts at the garage, where the last job ends.
+    m3Start: { x: 1178, y: 3380 },
+    // M4: Vera's warehouse, between Downtown and the Marina.
+    m4Start: { x: 2218, y: 2860 },
+    // M5: a crate from the Beachfront to the far side of Palm Heights.
+    m5Start: { x: 658, y: 260 },
+    m5Target: { x: 4818, y: 3380 },
+    // M6: the Night Tide truck waits at the Palm Heights depot; the Beachfront
+    // drop-off is where the story ends.
+    m6Start: { x: 4818, y: 3380 },
+    m6Truck: { x: 4794, y: 3230 },
+    m6Target: { x: 658, y: 3650 },
+  },
+};
+
 /** Synthesized audio: engine pitch follows speed between these frequencies. */
 export const AUDIO = {
   engineBaseHz: 55,

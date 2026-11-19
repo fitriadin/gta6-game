@@ -7,12 +7,17 @@ import { CITY, FONT, PALETTE, VIEW } from './config.js';
 import { carSprite, drawShadow, palmSprite, personSprite, playerSprite, roofSprite, treeSprite } from './sprites.js';
 import { drawPuffs, drawSkids } from './effects.js';
 import { drawHud } from './hud.js';
+import { ENDING_TEXT, MISSION_DEFS, nextMissionId } from './missions.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
 export const SCREEN_PAUSED = 'paused';
 export const SCREEN_OVER = 'over';
 export const SCREEN_CONTROLS = 'controls';
+export const SCREEN_BRIEFING = 'briefing';
+export const SCREEN_MISSIONS = 'missions';
+export const SCREEN_COMPLETE = 'complete';
+export const SCREEN_ENDING = 'ending';
 
 const fonts = new Map();
 
@@ -32,6 +37,7 @@ function titleMenuItems(state) {
 function pauseMenuItems() {
   return [
     { id: 'resume', label: 'Resume' },
+    { id: 'missions', label: 'Missions' },
     { id: 'save', label: 'Save Game' },
     { id: 'controls', label: 'Controls' },
     { id: 'restart', label: 'Restart' },
@@ -317,6 +323,43 @@ export function createRenderer(canvas) {
     context.restore();
   }
 
+  /** The mission marker in the world: a pulsing gold ring and a soft column of
+   * light over the spot the job points at (or the next job's start marker). */
+  function drawMissionMarker(state) {
+    const target = state.missionTarget;
+    if (!target) return;
+    const pulse = 0.5 + 0.5 * Math.sin(state.time * 4);
+    const radius = 46 + pulse * 10;
+    // A soft halo on the ground.
+    const glow = context.createRadialGradient(target.x, target.y, 6, target.x, target.y, radius + 26);
+    glow.addColorStop(0, 'rgba(245, 185, 66, 0.35)');
+    glow.addColorStop(1, 'rgba(245, 185, 66, 0)');
+    context.fillStyle = glow;
+    context.beginPath();
+    context.arc(target.x, target.y, radius + 26, 0, Math.PI * 2);
+    context.fill();
+    // The pulsing ring.
+    context.strokeStyle = `rgba(245, 185, 66, ${0.65 + pulse * 0.35})`;
+    context.lineWidth = 4;
+    context.beginPath();
+    context.arc(target.x, target.y, radius, 0, Math.PI * 2);
+    context.stroke();
+    // A diamond floating over the spot, bobbing gently.
+    const bob = Math.sin(state.time * 2.5) * 6;
+    const size = 13;
+    context.save();
+    context.translate(target.x, target.y - 34 + bob);
+    context.rotate(Math.PI / 4);
+    context.fillStyle = PALETTE.accent;
+    context.strokeStyle = '#14100a';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.rect(-size / 2, -size / 2, size, size);
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+
   function drawPlayer(state) {
     const player = state.player;
     if (player.inCar) return;
@@ -351,6 +394,7 @@ export function createRenderer(canvas) {
     drawVehicles(state, visible);
     drawPedestrians(state, visible);
     drawPlayer(state);
+    drawMissionMarker(state);
     drawBullets(state);
     if (state.effects) drawPuffs(context, state.effects, visible);
     context.restore();
@@ -396,6 +440,17 @@ export function createRenderer(canvas) {
     const rects = menuRects(items, 320);
     rects.forEach((rect, index) => drawMenuButton(rect, index === state.menuIndex, rect.label));
 
+    // Story progress, when the save has any: a badge once all six jobs are done.
+    const done = (state.missionsCompleted || []).length;
+    if (done > 0) {
+      const y = 320 + items.length * 64 + 30;
+      if (done >= MISSION_DEFS.length) {
+        text('★  STORY COMPLETE — SOLMAR BAY IS YOURS', VIEW.width / 2, y, 19, PALETTE.accent, 'center', 800);
+      } else {
+        text(`Missions: ${done}/${MISSION_DEFS.length}`, VIEW.width / 2, y, 18, PALETTE.muted, 'center', 600);
+      }
+    }
+
     text('WASD move  ·  E enter car  ·  Space sprint  ·  P pause  ·  M mute', VIEW.width / 2, VIEW.height - 44, 16, PALETTE.muted, 'center', 500);
     text('Made for make.fun — AI agents build, you collect.', VIEW.width / 2, VIEW.height - 20, 13, 'rgba(184,192,204,0.75)', 'center', 500);
   }
@@ -403,7 +458,16 @@ export function createRenderer(canvas) {
   function drawPaused(state) {
     context.fillStyle = 'rgba(8, 12, 22, 0.55)';
     context.fillRect(0, 0, VIEW.width, VIEW.height);
-    text('PAUSED', VIEW.width / 2, 170, 56, PALETTE.text, 'center', 900);
+    text('PAUSED', VIEW.width / 2, 150, 56, PALETTE.text, 'center', 900);
+    // Story progress under the heading: how far through the six jobs, and which
+    // one is running right now.
+    const done = (state.missionsCompleted || []).length;
+    const active = state.missions && state.missions.active;
+    const activeDef = active ? MISSION_DEFS.find((def) => def.id === active.id) : null;
+    const progress = activeDef
+      ? `Missions: ${done}/${MISSION_DEFS.length}  ·  On the job: ${activeDef.title}`
+      : `Missions: ${done}/${MISSION_DEFS.length}`;
+    text(progress, VIEW.width / 2, 186, 17, PALETTE.muted, 'center', 600);
     const items = pauseMenuItems();
     const rects = menuRects(items, 220);
     rects.forEach((rect, index) => drawMenuButton(rect, index === state.menuIndex, rect.label));
@@ -440,7 +504,135 @@ export function createRenderer(canvas) {
       text(row[0], VIEW.width / 2 - 260, y, 20, PALETTE.text, 'left', 700);
       text(row[1], VIEW.width / 2 + 260, y, 20, PALETTE.muted, 'right', 500);
     });
-    text('Press P, Esc or Enter to go back', VIEW.width / 2, 210 + rows.length * 46 + 30, 18, PALETTE.accent, 'center', 600);
+    text('Missions: drive into the gold marker to start a job. Pause and pick Missions to see the list.', VIEW.width / 2, 210 + rows.length * 46 + 30, 16, PALETTE.muted, 'center', 500);
+    text('Press P, Esc or Enter to go back', VIEW.width / 2, 210 + rows.length * 46 + 62, 18, PALETTE.accent, 'center', 600);
+  }
+
+  /** A dark card for a mission panel. */
+  function card(x, y, width, height) {
+    context.fillStyle = PALETTE.panel;
+    context.beginPath();
+    context.roundRect(x, y, width, height, 16);
+    context.fill();
+    context.strokeStyle = PALETTE.hudBorder;
+    context.lineWidth = 1;
+    context.stroke();
+  }
+
+  /** Split text into lines that fit maxWidth at the current font. */
+  function wrapLines(textValue, maxWidth) {
+    const words = textValue.split(' ');
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      const trial = line ? `${line} ${word}` : word;
+      if (context.measureText(trial).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = trial;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  /** The mission briefing: the story so far, the job, and the pay. */
+  function drawBriefing(state) {
+    const def = state.briefingMission;
+    if (!def) return;
+    context.fillStyle = 'rgba(8, 12, 22, 0.6)';
+    context.fillRect(0, 0, VIEW.width, VIEW.height);
+    card(240, 140, 800, 440);
+    const index = MISSION_DEFS.findIndex((item) => item.id === def.id);
+    text(`MISSION ${index + 1}/${MISSION_DEFS.length}`, VIEW.width / 2, 196, 17, PALETTE.accent, 'center', 800);
+    text(def.title, VIEW.width / 2, 242, 38, PALETTE.text, 'center', 900);
+    context.font = font(19, 500);
+    const lines = wrapLines(def.briefing, 700);
+    lines.forEach((line, i) => {
+      text(line, VIEW.width / 2, 292 + i * 28, 19, PALETTE.muted, 'center', 500);
+    });
+    text(`Reward: $${def.reward.toLocaleString('en-US')}`, VIEW.width / 2, 292 + lines.length * 28 + 26, 21, PALETTE.money, 'center', 800);
+    text('Enter — Start the job', VIEW.width / 2, 512, 21, PALETTE.accent, 'center', 700);
+    text('Esc — Not now', VIEW.width / 2, 544, 17, PALETTE.muted, 'center', 500);
+  }
+
+  /** Row rectangles for the missions list, shared by the draw and the hit test. */
+  function missionsRects() {
+    return MISSION_DEFS.map((def, index) => ({ ...def, x: 270, y: 175 + index * 62, width: 740, height: 56 }));
+  }
+
+  /** The missions list (from the pause menu): all six jobs, their state, and the pay. */
+  function drawMissions(state) {
+    context.fillStyle = 'rgba(8, 12, 22, 0.6)';
+    context.fillRect(0, 0, VIEW.width, VIEW.height);
+    card(240, 90, 800, 540);
+    text('MISSIONS', VIEW.width / 2, 148, 40, PALETTE.text, 'center', 900);
+    const done = state.missionsCompleted || [];
+    const next = nextMissionId(done);
+    const activeId = state.missions && state.missions.active ? state.missions.active.id : null;
+    for (const rect of missionsRects()) {
+      const index = MISSION_DEFS.findIndex((item) => item.id === rect.id);
+      const selected = index === state.menuIndex;
+      const isDone = done.includes(rect.id);
+      const status = isDone ? 'DONE' : rect.id === activeId ? 'ACTIVE' : rect.id === next ? 'NEXT' : 'LOCKED';
+      context.fillStyle = selected ? PALETTE.accent : 'rgba(255,255,255,0.05)';
+      context.beginPath();
+      context.roundRect(rect.x, rect.y, rect.width, rect.height, 10);
+      context.fill();
+      if (!selected) {
+        context.strokeStyle = 'rgba(255,255,255,0.12)';
+        context.lineWidth = 1;
+        context.stroke();
+      }
+      const ink = selected ? '#14100a' : PALETTE.text;
+      const sub = selected ? '#3a2f14' : PALETTE.muted;
+      text(`${index + 1}.  ${rect.title}`, rect.x + 18, rect.y + 36, 20, ink, 'left', 700);
+      text(`$${rect.reward.toLocaleString('en-US')}`, rect.x + rect.width - 110, rect.y + 36, 18, sub, 'right', 600);
+      const statusColour = selected ? '#14100a' : status === 'DONE' ? PALETTE.health : status === 'LOCKED' ? PALETTE.muted : PALETTE.accent;
+      text(status, rect.x + rect.width - 18, rect.y + 36, 17, statusColour, 'right', 800);
+    }
+    text('Enter — Start the next job  ·  Esc — Back', VIEW.width / 2, 590, 18, PALETTE.accent, 'center', 600);
+  }
+
+  /** Mission complete: the pay, and what unlocks next. */
+  function drawComplete(state) {
+    const def = state.completeMission;
+    if (!def) return;
+    context.fillStyle = 'rgba(8, 12, 22, 0.6)';
+    context.fillRect(0, 0, VIEW.width, VIEW.height);
+    card(320, 180, 640, 360);
+    text('MISSION COMPLETE', VIEW.width / 2, 252, 40, PALETTE.accent, 'center', 900);
+    text(def.title, VIEW.width / 2, 298, 24, PALETTE.text, 'center', 700);
+    text(`+$${def.reward.toLocaleString('en-US')}`, VIEW.width / 2, 346, 30, PALETTE.money, 'center', 800);
+    const next = nextMissionId(state.missionsCompleted || []);
+    const nextDef = next ? MISSION_DEFS.find((item) => item.id === next) : null;
+    if (nextDef) {
+      text(`Next job unlocked: ${nextDef.title}`, VIEW.width / 2, 392, 19, PALETTE.muted, 'center', 600);
+    }
+    text('Enter — Continue', VIEW.width / 2, 478, 21, PALETTE.accent, 'center', 700);
+  }
+
+  /** The story ending, after the final mission: Solmar Bay is yours — for now. */
+  function drawEnding(state) {
+    context.fillStyle = 'rgba(8, 12, 22, 0.72)';
+    context.fillRect(0, 0, VIEW.width, VIEW.height);
+    text(ENDING_TEXT.title, VIEW.width / 2, 180, 20, PALETTE.accent, 'center', 800);
+    text('SOLMAR BAY IS YOURS — FOR NOW', VIEW.width / 2, 242, 42, '#ffffff', 'center', 900);
+    ENDING_TEXT.lines.forEach((line, index) => {
+      text(line, VIEW.width / 2, 300 + index * 32, 20, PALETTE.muted, 'center', 500);
+    });
+    text(
+      `Missions: ${MISSION_DEFS.length}/${MISSION_DEFS.length}  ·  Money: $${state.money.toLocaleString('en-US')}`,
+      VIEW.width / 2,
+      392,
+      19,
+      PALETTE.text,
+      'center',
+      700,
+    );
+    text(ENDING_TEXT.sub, VIEW.width / 2, 432, 18, PALETTE.muted, 'center', 500);
+    text('Enter — Keep playing', VIEW.width / 2, 500, 21, PALETTE.accent, 'center', 700);
   }
 
   /** Paint one frame: the world, then the HUD or a panel for the current screen. */
@@ -475,6 +667,10 @@ export function createRenderer(canvas) {
     }
     if (screen === SCREEN_PAUSED) drawPaused(state);
     else if (screen === SCREEN_OVER) drawOver(state);
+    else if (screen === SCREEN_BRIEFING) drawBriefing(state);
+    else if (screen === SCREEN_MISSIONS) drawMissions(state);
+    else if (screen === SCREEN_COMPLETE) drawComplete(state);
+    else if (screen === SCREEN_ENDING) drawEnding(state);
   }
 
   /** Which title-menu item sits under logical point (x, y), or -1. */
@@ -496,7 +692,17 @@ export function createRenderer(canvas) {
     return -1;
   }
 
+  /** Which missions-list row sits under logical point (x, y), or -1. */
+  function missionsMenuHit(x, y) {
+    const rects = missionsRects();
+    for (let i = 0; i < rects.length; i += 1) {
+      const rect = rects[i];
+      if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) return i;
+    }
+    return -1;
+  }
+
   resize();
   window.addEventListener('resize', resize);
-  return { draw, clientToLogical, titleMenuHit, pauseMenuHit, titleMenuItems, pauseMenuItems };
+  return { draw, clientToLogical, titleMenuHit, pauseMenuHit, missionsMenuHit, titleMenuItems, pauseMenuItems };
 }

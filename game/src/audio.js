@@ -209,6 +209,26 @@ export function createAudio() {
     setTimeout(() => blip(262, 0.28, 0.16), 300);
   }
 
+  /** The mission-start jingle: two rising notes — the job is on. */
+  function missionStart() {
+    blip(523, 0.12, 0.16);
+    setTimeout(() => blip(784, 0.2, 0.16), 110);
+  }
+
+  /** The mission-complete fanfare: a little rising arpeggio, plus the cash register. */
+  function missionComplete() {
+    blip(523, 0.12, 0.16);
+    setTimeout(() => blip(659, 0.12, 0.16), 110);
+    setTimeout(() => blip(784, 0.12, 0.16), 220);
+    setTimeout(() => blip(1047, 0.3, 0.18), 330);
+  }
+
+  /** The mission-fail sting: two falling notes — the job slipped away. */
+  function missionFail() {
+    blip(330, 0.18, 0.16);
+    setTimeout(() => blip(220, 0.32, 0.16), 170);
+  }
+
   /**
    * The police siren: a two-tone wail whose volume follows `level` (0 = silent,
    * 1 = right on top of the player). The oscillator is built lazily on the first
@@ -242,5 +262,5 @@ export function createAudio() {
     } catch { /* ignore */ }
   }
 
-  return { start, setEngine, setMuted, blip, door, steal, crash, gunshot, explosion, punch, busted, setSiren };
+  return { start, setEngine, setMuted, blip, door, steal, crash, gunshot, explosion, punch, busted, missionStart, missionComplete, missionFail, setSiren };
 }
