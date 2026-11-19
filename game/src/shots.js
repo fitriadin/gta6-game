@@ -153,7 +153,7 @@ export function stageShot(name, state) {
     state.money = 150;
     state.wanted = 0;
     startMission(state.missions, 'm1', missionShotCtx(state));
-    const car = makeVehicle('sedan', '#c94f43', 2626, 3000, Math.PI, 'parked');
+    const car = makeVehicle('sedan', '#c94f43', 2626, 3060, Math.PI, 'parked');
     state.vehicles.push(car);
     stealVehicle(state.player, car);
     car.speed = 430;
@@ -161,8 +161,9 @@ export function stageShot(name, state) {
     car.vy = 430;
     // A taxi ahead in the same lane, a van coming the other way, and a car
     // crossing on the east-west road — the street is alive around the job.
-    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2626, y: 2730, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 280, speed: 280 });
-    addTrafficCar(state.vehicles, { model: 'van', colour: '#5f9e6e', x: 2674, y: 3150, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 240, speed: 240 });
+    // The marker sits 240 ahead of the car, clear of the exit prompt.
+    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2626, y: 2780, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 280, speed: 280 });
+    addTrafficCar(state.vehicles, { model: 'van', colour: '#5f9e6e', x: 2674, y: 3100, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 240, speed: 240 });
     addTrafficCar(state.vehicles, { model: 'sedan', colour: '#3f7fc9', x: 2350, y: 2884, angle: Math.PI / 2, axis: 'h', roadPos: 2860, dir: 1, cruise: 260, speed: 260 });
     state.cam.snap(state.player.x, state.player.y);
     return { screen: SCREEN_PLAY };

@@ -46,7 +46,13 @@ export const VEHICLES = {
   taxi: { maxSpeed: 660, accel: 460, brake: 950, reverseMax: 150, turn: 2.8, grip: 9, length: 66, width: 36 },
   van: { maxSpeed: 520, accel: 340, brake: 850, reverseMax: 130, turn: 2.2, grip: 7.5, length: 74, width: 40 },
   truck: { maxSpeed: 460, accel: 280, brake: 750, reverseMax: 110, turn: 1.9, grip: 6.5, length: 92, width: 44 },
-  police: { maxSpeed: 720, accel: 500, brake: 1000, reverseMax: 160, turn: 2.9, grip: 9.5, length: 66, width: 36 },
+  // The pursuit car is the fastest thing in the city, but only just: a sedan
+  // (640) or taxi (660) gains on it slowly down a straight, and the pursuit
+  // sheds more speed in corners (see police.js). At 720/500 the pack was
+  // strictly better than any stealable car in every stat — seven escape probes
+  // never opened a gap beyond the spawn distance, so the heat could never be
+  // lost and the "lose the heat" missions were uncompletable.
+  police: { maxSpeed: 680, accel: 460, brake: 1000, reverseMax: 160, turn: 2.9, grip: 9.5, length: 66, width: 36 },
 };
 
 /** Traffic: how many cars share the roads, how fast they cruise, where they recycle. */
@@ -99,9 +105,10 @@ export const POLICE = {
   /** No police unit this close counts as "out of sight" for the decay timer. */
   hiddenRange: 650,
   /** A pursuit car farther than this from the player gives up the chase and
-   * leaves: without a give-up range the pack (faster than any car the player
-   * can steal) can never be shaken, and the heat could never decay at all. */
-  giveUpRange: 700,
+   * leaves: without a give-up range the pack can never be shaken, and the heat
+   * could never decay at all. Matches hiddenRange, so a car that gives up is
+   * also out of decay range and the heat starts dropping right away. */
+  giveUpRange: 650,
   spawnCarMin: 550,
   spawnCarMax: 950,
   spawnOfficerMin: 300,

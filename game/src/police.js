@@ -338,11 +338,12 @@ function stepPoliceCar(car, police, ctx, dt) {
     else throttle = 0.6;
   } else if (Math.abs(diff) > 2.0 && speed > 150) {
     braking = true;
-  } else if (Math.abs(diff) > 1.0 && speed > 280) {
+  } else if (Math.abs(diff) > 1.0 && speed > 220) {
     // Brake into a sharp turn — a 500 u/s drift swings wide off the road. The
-    // pursuit brakes a touch earlier than a player would, which is what makes
-    // a zigzag escape possible at all: the pack is faster on the straights, so
-    // the corners are where a driver gains on it.
+    // pursuit brakes earlier and harder than a player would, which is what
+    // makes a zigzag escape possible at all: the pack is faster on the
+    // straights, so the corners are where a driver gains on it. (At 280 the
+    // pack still held the player through every corner in probe after probe.)
     braking = true;
   } else if (!aim.direct && aimDistance < 260 && speed > 180) {
     // Slow down for the intersection turn, or the car blows straight past it.
