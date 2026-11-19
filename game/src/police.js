@@ -338,10 +338,13 @@ function stepPoliceCar(car, police, ctx, dt) {
     else throttle = 0.6;
   } else if (Math.abs(diff) > 2.0 && speed > 150) {
     braking = true;
-  } else if (Math.abs(diff) > 1.2 && speed > 300) {
-    // Brake into a sharp turn — a 500 u/s drift swings wide off the road.
+  } else if (Math.abs(diff) > 1.0 && speed > 280) {
+    // Brake into a sharp turn — a 500 u/s drift swings wide off the road. The
+    // pursuit brakes a touch earlier than a player would, which is what makes
+    // a zigzag escape possible at all: the pack is faster on the straights, so
+    // the corners are where a driver gains on it.
     braking = true;
-  } else if (!aim.direct && aimDistance < 220 && speed > 200) {
+  } else if (!aim.direct && aimDistance < 260 && speed > 180) {
     // Slow down for the intersection turn, or the car blows straight past it.
     braking = true;
   }
@@ -573,14 +576,41 @@ export function stepPolice(police, ctx, dt) {
       police.cars.splice(police.cars.indexOf(car), 1);
       continue;
     }
+    const carDistance = Math.hypot(car.x - ctx.player.x, car.y - ctx.player.y);
+    // A chase car that falls far behind gives up and leaves: the player shook
+    // it. (A roadblock car holds its post instead — it is not chasing anyone.)
+    // Without this, the pack could never be lost, because pursuit cars are
+    // faster than anything the player can steal.
+    if (car.role === 'chase' && carDistance > POLICE.giveUpRange) {
+      const index = ctx.vehicles.indexOf(car);
+      if (index >= 0) ctx.vehicles.splice(index, 1);
+      police.cars.splice(police.cars.indexOf(car), 1);
+      continue;
+    }
     // Too far behind to matter: retire it and let the spawner send a fresh one.
-    if (Math.hypot(car.x - ctx.player.x, car.y - ctx.player.y) > POLICE.despawnRange) {
+    if (carDistance > POLICE.despawnRange) {
       const index = ctx.vehicles.indexOf(car);
       if (index >= 0) ctx.vehicles.splice(index, 1);
       police.cars.splice(police.cars.indexOf(car), 1);
       continue;
     }
     stepPoliceCar(car, police, ctx, dt);
+  }
+  // The pack stays at the size the wanted level calls for. Roadblock cars that
+  // convert to the chase used to pile up on top of the spawned pack (six cars
+  // at three stars), so the farthest extra chaser is sent back to patrol.
+  const wantCars = POLICE.carsByStars[police.wanted] || 0;
+  const chasers = police.cars.filter((car) => car.role === 'chase');
+  if (chasers.length > wantCars) {
+    chasers.sort(
+      (a, b) =>
+        Math.hypot(b.x - ctx.player.x, b.y - ctx.player.y) - Math.hypot(a.x - ctx.player.x, a.y - ctx.player.y),
+    );
+    for (const extra of chasers.slice(wantCars)) {
+      const index = ctx.vehicles.indexOf(extra);
+      if (index >= 0) ctx.vehicles.splice(index, 1);
+      police.cars.splice(police.cars.indexOf(extra), 1);
+    }
   }
   for (const officer of [...police.officers]) {
     if (Math.hypot(officer.x - ctx.player.x, officer.y - ctx.player.y) > POLICE.despawnRange && officer.state !== 'down') {

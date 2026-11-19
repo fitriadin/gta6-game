@@ -98,6 +98,10 @@ export const POLICE = {
   decaySeconds: 18,
   /** No police unit this close counts as "out of sight" for the decay timer. */
   hiddenRange: 650,
+  /** A pursuit car farther than this from the player gives up the chase and
+   * leaves: without a give-up range the pack (faster than any car the player
+   * can steal) can never be shaken, and the heat could never decay at all. */
+  giveUpRange: 700,
   spawnCarMin: 550,
   spawnCarMax: 950,
   spawnOfficerMin: 300,
