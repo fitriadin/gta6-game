@@ -109,8 +109,13 @@ export const POLICE = {
    * could never decay at all. Matches hiddenRange, so a car that gives up is
    * also out of decay range and the heat starts dropping right away. */
   giveUpRange: 650,
-  spawnCarMin: 550,
-  spawnCarMax: 950,
+  // Pursuit cars spawn 800–1300 out: at 550–950 the first car arrived in
+  // under a second, while the player was still accelerating from a standstill,
+  // and rammed it off the road into a block before the escape began (playtest
+  // run 6, M3: pinned at the garage for 140s, five cars wedged in a row).
+  // Two seconds of warning lets the player get rolling first.
+  spawnCarMin: 800,
+  spawnCarMax: 1300,
   spawnOfficerMin: 300,
   spawnOfficerMax: 520,
   despawnRange: 1700,
