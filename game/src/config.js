@@ -37,6 +37,71 @@ export const PLAYER = {
 /** Parked cars the player can walk up to (chunk 2 makes them drivable). */
 export const PARKED_CAR = { width: 34, height: 62, promptRange: 64 };
 
+/** How world-units-per-second translate to the km/h on the speedometer. */
+export const SPEED_KMH = 0.22;
+
+/** Per-model driving feel. `turn` is radians per second at full lock and full speed. */
+export const VEHICLES = {
+  sedan: { maxSpeed: 640, accel: 430, brake: 950, reverseMax: 150, turn: 2.7, grip: 9, length: 66, width: 36 },
+  taxi: { maxSpeed: 660, accel: 460, brake: 950, reverseMax: 150, turn: 2.8, grip: 9, length: 66, width: 36 },
+  van: { maxSpeed: 520, accel: 340, brake: 850, reverseMax: 130, turn: 2.2, grip: 7.5, length: 74, width: 40 },
+  truck: { maxSpeed: 460, accel: 280, brake: 750, reverseMax: 110, turn: 1.9, grip: 6.5, length: 92, width: 44 },
+  police: { maxSpeed: 720, accel: 500, brake: 1000, reverseMax: 160, turn: 2.9, grip: 9.5, length: 66, width: 36 },
+};
+
+/** Traffic: how many cars share the roads, how fast they cruise, where they recycle. */
+export const TRAFFIC = {
+  count: 14,
+  cruiseMin: 210,
+  cruiseMax: 320,
+  laneOffset: 24,
+  /** A car this far ahead (world units) makes traffic brake. */
+  stopGap: 110,
+  /** Recycle distance from the camera, in world units. */
+  spawnMin: 900,
+  spawnMax: 1450,
+  despawn: 1750,
+  turnChance: 0.3,
+  /** Seconds between intersection turn decisions for one car. */
+  turnCooldown: 2.5,
+};
+
+/** Pedestrians: crowd size, walking pace, and what scares them. */
+export const PEDS = {
+  count: 36,
+  walkMin: 55,
+  walkMax: 95,
+  fleeSpeed: 250,
+  /** A fast car inside this radius makes nearby peds panic and run. */
+  panicRadius: 200,
+  panicSpeed: 260,
+  /** A stolen car scares peds this far away. */
+  stealRadius: 260,
+  spawnMin: 500,
+  spawnMax: 1200,
+  despawn: 1500,
+  /** Fraction of peds that stand and chat in pairs instead of walking. */
+  chatFraction: 0.2,
+};
+
+/** Synthesized audio: engine pitch follows speed between these frequencies. */
+export const AUDIO = {
+  engineBaseHz: 55,
+  engineTopHz: 210,
+  engineGain: 0.055,
+  ambientGain: 0.03,
+  masterGain: 0.9,
+};
+
+/** Skid marks and dust: how long they linger, how many the world keeps. */
+export const EFFECTS = {
+  skidLife: 22,
+  maxSkids: 400,
+  maxPuffs: 160,
+  puffLife: 0.9,
+  smokeLife: 1.6,
+};
+
 export const CAMERA = {
   zoom: 1,
   followSharpness: 5,
