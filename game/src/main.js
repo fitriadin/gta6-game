@@ -70,6 +70,8 @@ function showToast(message) {
 
 function runShot(name) {
   const scene = stageShot(name, state);
+  // Debug handle, as in the live game.
+  window.__solmar = state;
   let painted = 0;
   function paint() {
     renderer.draw(state, scene.screen);

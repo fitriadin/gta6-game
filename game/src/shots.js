@@ -41,12 +41,12 @@ export function stageShot(name, state) {
     car.vx = 0;
     car.vy = 420;
     // Traffic ahead in the same lane, oncoming in the northbound lane, and a
-    // taxi crossing on the east-west avenue.
-    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2626, y: 1130, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 280, speed: 280 });
-    addTrafficCar(state.vehicles, { model: 'van', colour: '#5f9e6e', x: 2626, y: 780, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 240, speed: 240 });
-    addTrafficCar(state.vehicles, { model: 'sedan', colour: '#3f7fc9', x: 2674, y: 1750, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 300, speed: 300 });
-    addTrafficCar(state.vehicles, { model: 'sedan', colour: '#e8e4da', x: 2674, y: 2050, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 260, speed: 260 });
-    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2250, y: 1874, angle: Math.PI / 2, axis: 'h', roadPos: 1850, dir: 1, cruise: 290, speed: 290 });
+    // car crossing on the east-west road — all inside the 1280x720 frame.
+    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2626, y: 1230, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 280, speed: 280 });
+    addTrafficCar(state.vehicles, { model: 'van', colour: '#5f9e6e', x: 2674, y: 1300, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 240, speed: 240 });
+    addTrafficCar(state.vehicles, { model: 'sedan', colour: '#3f7fc9', x: 2674, y: 1760, angle: 0, axis: 'v', roadPos: 2650, dir: -1, cruise: 300, speed: 300 });
+    addTrafficCar(state.vehicles, { model: 'sedan', colour: '#e8e4da', x: 2350, y: 1324, angle: Math.PI / 2, axis: 'h', roadPos: 1300, dir: 1, cruise: 260, speed: 260 });
+    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2950, y: 1826, angle: -Math.PI / 2, axis: 'h', roadPos: 1850, dir: -1, cruise: 290, speed: 290 });
     // A few pedestrians onto the avenue sidewalks, so the street feels alive.
     const spots = [
       { x: 2568, y: 1350, angle: Math.PI },

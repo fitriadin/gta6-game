@@ -9,7 +9,7 @@
 // at an intersection. All cars collide with buildings and with each other.
 
 import { CITY, SPEED_KMH, TRAFFIC, VEHICLES } from './config.js';
-import { circleHitsBuilding } from './city.js';
+import { circleHitsBuilding, isRoad, nearestRoadPoint } from './city.js';
 
 let nextId = 1;
 
@@ -28,10 +28,26 @@ export function carDimensions(model) {
   return { length: tune.length, width: tune.width };
 }
 
-/** Collision radius: a circle that covers the car's corners loosely. */
+/** Collision radius: a circle that covers the car's corners loosely (car-vs-car only). */
 export function carRadius(model) {
   const { length, width } = carDimensions(model);
   return Math.hypot(length, width) / 2 - 4;
+}
+
+/**
+ * Does the car body touch a building at (x, y) with this angle? Two small
+ * circles — one at each axle — hug the car's real shape far better than one big
+ * circle, so a car can brush a kerb without "hitting" the building behind it.
+ */
+export function carHitsBuilding(city, model, x, y, angle) {
+  const { length, width } = carDimensions(model);
+  const forward = forwardOf(angle);
+  const radius = width / 2 + 4;
+  const half = length / 2 - 8;
+  return !!(
+    circleHitsBuilding(city, x + forward.x * half, y + forward.y * half, radius) ||
+    circleHitsBuilding(city, x - forward.x * half, y - forward.y * half, radius)
+  );
 }
 
 export function makeVehicle(model, colour, x, y, angle, state = 'parked') {
@@ -259,12 +275,12 @@ export function stepPlayerVehicle(vehicle, city, drive, dt, fx, onCrash) {
   vehicle.vy = fwd.y * vf + rgt.y * vl;
   vehicle.speed = vf;
 
-  const radius = carRadius(vehicle.model);
+  const radius = carDimensions(vehicle.model).width / 2 + 4;
   const prevX = vehicle.x;
   const prevY = vehicle.y;
   // Move axis by axis so the car slides along walls instead of sticking.
   const nextX = vehicle.x + vehicle.vx * dt;
-  if (!circleHitsBuilding(city, nextX, vehicle.y, radius) && nextX > CITY.seaWidth + radius && nextX < CITY.width - radius) {
+  if (!carHitsBuilding(city, vehicle.model, nextX, vehicle.y, vehicle.angle) && nextX > CITY.seaWidth + radius && nextX < CITY.width - radius) {
     vehicle.x = nextX;
   } else {
     const impact = Math.abs(vehicle.vx);
@@ -275,7 +291,7 @@ export function stepPlayerVehicle(vehicle, city, drive, dt, fx, onCrash) {
     }
   }
   const nextY = vehicle.y + vehicle.vy * dt;
-  if (!circleHitsBuilding(city, vehicle.x, nextY, radius) && nextY > radius && nextY < CITY.height - radius) {
+  if (!carHitsBuilding(city, vehicle.model, vehicle.x, nextY, vehicle.angle) && nextY > radius && nextY < CITY.height - radius) {
     vehicle.y = nextY;
   } else {
     const impact = Math.abs(vehicle.vy);
@@ -320,9 +336,12 @@ function angleTowards(current, target, maxStep) {
   return current + diff;
 }
 
-/** Is another vehicle (or the player on foot) in the way ahead of this car? */
+/** Is another vehicle (or the player on foot) in the way ahead of this car?
+ * Only things roughly in the same lane count — an oncoming car in the other
+ * lane must not make traffic brake. */
 function blockedAhead(car, vehicles, player, city) {
   const forward = forwardOf(car.angle);
+  const right = rightOf(car.angle);
   for (const other of vehicles) {
     if (other === car) continue;
     const dx = other.x - car.x;
@@ -330,7 +349,8 @@ function blockedAhead(car, vehicles, player, city) {
     const distance = Math.hypot(dx, dy);
     if (distance > TRAFFIC.stopGap || distance < 1) continue;
     const ahead = (dx * forward.x + dy * forward.y) / distance;
-    if (ahead > 0.72) return true;
+    const lateral = Math.abs(dx * right.x + dy * right.y);
+    if (ahead > 0.72 && lateral < 30) return true;
   }
   if (player && !player.inCar) {
     const dx = player.x - car.x;
@@ -338,7 +358,8 @@ function blockedAhead(car, vehicles, player, city) {
     const distance = Math.hypot(dx, dy);
     if (distance < 90 && distance > 1) {
       const ahead = (dx * forward.x + dy * forward.y) / distance;
-      if (ahead > 0.8) return true;
+      const lateral = Math.abs(dx * right.x + dy * right.y);
+      if (ahead > 0.8 && lateral < 30) return true;
     }
   }
   return false;
@@ -372,12 +393,32 @@ function stepTrafficCar(car, city, vehicles, player, dt) {
     targetX = car.x + car.dir * 150;
     targetY = lane.line;
   }
+  // Recovery: a car that drifted off the road (or is about to clip a building
+  // on a wide turn) aims at the nearest road point instead of its lane.
+  const forward = forwardOf(car.angle);
+  const lookX = car.x + forward.x * 70;
+  const lookY = car.y + forward.y * 70;
+  const offRoad = !isRoad(city, car.x, car.y);
+  const aheadBlocked = !!circleHitsBuilding(city, lookX, lookY, 10);
+  if (offRoad || aheadBlocked) {
+    const roadPoint = nearestRoadPoint(city, car.x, car.y);
+    targetX = roadPoint.x;
+    targetY = roadPoint.y;
+  }
   const desiredAngle = Math.atan2(targetX - car.x, -(targetY - car.y));
-  car.angle = angleTowards(car.angle, desiredAngle, 2.4 * dt);
+  let angleDiff = desiredAngle - car.angle;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+  car.angle = angleTowards(car.angle, desiredAngle, 3.1 * dt);
 
   const blocked = blockedAhead(car, vehicles, player, city);
   car.braking = blocked;
-  const targetSpeed = blocked ? 0 : car.cruise;
+  // Slow right down for a sharp turn — a car that takes a corner at cruise speed
+  // swings wide off the road. Recovery driving is slow too.
+  let cruise = car.cruise;
+  if (Math.abs(angleDiff) > 0.45) cruise = Math.min(cruise, 130);
+  if (offRoad || aheadBlocked) cruise = Math.min(cruise, 150);
+  const targetSpeed = blocked ? 0 : cruise;
   if (car.speed < targetSpeed) car.speed = Math.min(targetSpeed, car.speed + 300 * dt);
   else if (car.speed > targetSpeed) car.speed = Math.max(targetSpeed, car.speed - 700 * dt);
 
@@ -405,11 +446,19 @@ function stepTrafficCar(car, city, vehicles, player, dt) {
     else if (car.x > city.width - 70 && car.dir > 0) car.dir = -1;
   }
 
-  const forward = forwardOf(car.angle);
-  car.vx = forward.x * car.speed;
-  car.vy = forward.y * car.speed;
+  const heading = forwardOf(car.angle);
+  car.vx = heading.x * car.speed;
+  car.vy = heading.y * car.speed;
+  const prevX = car.x;
+  const prevY = car.y;
   car.x += car.vx * dt;
   car.y += car.vy * dt;
+  // A traffic car must never end up inside a building: step back and stop.
+  if (carHitsBuilding(city, car.model, car.x, car.y, car.angle)) {
+    car.x = prevX;
+    car.y = prevY;
+    car.speed = 0;
+  }
   car.x = Math.max(CITY.seaWidth + 24, Math.min(city.width - 24, car.x));
   car.y = Math.max(24, Math.min(city.height - 24, car.y));
 }
