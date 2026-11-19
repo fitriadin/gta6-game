@@ -53,6 +53,18 @@ export function nearestPoliceDistance(police, x, y) {
   return best;
 }
 
+/** Distance to the nearest CHASE car, or Infinity when none is chasing. A
+ * roadblock car holding its post and an officer on foot do not count: they
+ * are not pursuing anyone, so they cannot call in a fresh pursuit car. */
+function nearestChaseCarDistance(police, x, y) {
+  let best = Infinity;
+  for (const car of police.cars) {
+    if (car.role !== 'chase') continue;
+    best = Math.min(best, Math.hypot(car.x - x, car.y - y));
+  }
+  return best;
+}
+
 /** Pull every unit off the street and clear the heat (busted, or the trail went cold). */
 export function clearPolice(police, vehicles, peds) {
   for (const car of police.cars) {
@@ -561,7 +573,11 @@ export function stepPolice(police, ctx, dt) {
   if (police.spawnTimer <= 0) {
     police.spawnTimer = 0.5;
     const trailFresh = ctx.time - police.lastCrimeAt < 8;
-    const unitNear = nearestPoliceDistance(police, ctx.player.x, ctx.player.y) < 1200;
+    // Only a chase car still in the area keeps the reinforcements coming. An
+    // officer trailing behind on foot used to hold this gate open, so every
+    // chase car the player shook was replaced by a fresh spawn before the heat
+    // could decay — the pack could never be thinned at all.
+    const unitNear = nearestChaseCarDistance(police, ctx.player.x, ctx.player.y) < 1200;
     if (trailFresh || unitNear) {
       const wantCars = POLICE.carsByStars[police.wanted] || 0;
       const wantOfficers = POLICE.officersByStars[police.wanted] || 0;
