@@ -233,6 +233,20 @@ function pursuitAim(car, player, city) {
   return { x: targetX, y: car.roadPos, direct: false };
 }
 
+/** Is the point near an intersection with a road of the other axis? */
+function nearIntersection(city, x, y, axis) {
+  if (axis === 'v') {
+    for (const road of city.hRoads) {
+      if (Math.abs(y - road.y) < 70) return true;
+    }
+  } else {
+    for (const road of city.vRoads) {
+      if (Math.abs(x - road.x) < 70) return true;
+    }
+  }
+  return false;
+}
+
 /** One pursuit car: chase the player along the road grid, box them in with the
  * other cars once on the same road, ram when close. */
 function stepPoliceCar(car, police, ctx, dt) {
@@ -249,10 +263,12 @@ function stepPoliceCar(car, police, ctx, dt) {
     }
   }
 
-  // Shoved off the tracked road (a ram, a spin): adopt the nearest road again.
+  // Shoved off the tracked road (a ram, a spin): adopt the nearest road again —
+  // but never at an intersection, where the two roads are equally near and the
+  // car would flip-flop between them instead of turning.
   const offTrack =
     car.axis === 'v' ? Math.abs(car.x - car.roadPos) > 60 : Math.abs(car.y - car.roadPos) > 60;
-  if (offTrack) {
+  if (offTrack && !nearIntersection(ctx.city, car.x, car.y, car.axis)) {
     const road = nearestRoad(ctx.city, car.x, car.y);
     car.axis = road.axis;
     car.roadPos = road.pos;
@@ -289,11 +305,14 @@ function stepPoliceCar(car, police, ctx, dt) {
       aimY = targetY + right.y * side * 95;
     }
   }
-  // Off the road, or a wall right ahead: get back on the asphalt first.
+  // Off the road, or a wall right ahead: get back on the asphalt first. The
+  // lookahead is short and tight — a grazing look at a building corner near the
+  // kerb must not hijack the aim (it once steered a turning car back along the
+  // road it came from instead of through the intersection).
   const forward = forwardOf(car.angle);
-  const lookX = car.x + forward.x * 70;
-  const lookY = car.y + forward.y * 70;
-  if (!isRoad(ctx.city, car.x, car.y) || circleHitsBuilding(ctx.city, lookX, lookY, 10)) {
+  const lookX = car.x + forward.x * 55;
+  const lookY = car.y + forward.y * 55;
+  if (!isRoad(ctx.city, car.x, car.y) || circleHitsBuilding(ctx.city, lookX, lookY, 4)) {
     const roadPoint = nearestRoadPoint(ctx.city, car.x, car.y);
     aimX = roadPoint.x;
     aimY = roadPoint.y;
@@ -307,24 +326,33 @@ function stepPoliceCar(car, police, ctx, dt) {
   // looping around the block instead of staying on them.
   let throttle = 1;
   const speed = Math.abs(car.speed);
+  // Braking uses the handbrake, never reverse throttle: in this physics model
+  // a negative throttle below 12 u/s engages reverse gear, so "braking" with
+  // it makes the car back away from the player instead of stopping beside them.
+  let braking = false;
   if (aim.direct && aimDistance < 150) {
-    throttle = speed > 120 ? -0.7 : 0.4;
+    if (speed > 120) braking = true;
+    else throttle = 0.4;
   } else if (aimDistance < 120) {
-    throttle = speed > 150 ? -0.5 : 0.6;
+    if (speed > 150) braking = true;
+    else throttle = 0.6;
   } else if (Math.abs(diff) > 2.0 && speed > 150) {
-    // The target is behind: stand on the brakes, then spin around.
-    throttle = -1;
+    braking = true;
+  } else if (Math.abs(diff) > 1.2 && speed > 300) {
+    // Brake into a sharp turn — a 500 u/s drift swings wide off the road.
+    braking = true;
+  } else if (!aim.direct && aimDistance < 220 && speed > 200) {
+    // Slow down for the intersection turn, or the car blows straight past it.
+    braking = true;
   }
   let steer = clamp(diff * 2.4, -1, 1);
-  if (Math.abs(diff) > 2.4 && speed < 100) {
-    // Facing the wrong way at low speed: back up while turning instead of
-    // swinging a wide U-turn that leaves the road (and the kerb).
-    throttle = -0.8;
-    steer = -steer;
-  }
-  let handbrake = Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350;
-  // Stuck against something: back up briefly, steering toward the open road.
-  if (Math.abs(car.speed) < 25 && throttle > 0) {
+  let handbrake = braking || (Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350);
+  if (braking) throttle = 0;
+  // Reversing is a committed manoeuvre on a timer, not a per-step decision: a
+  // per-step rule flips the moment the reversing car passes 100 u/s and the car
+  // ends up seesawing forward and back in place. Two triggers share the timer:
+  // stuck against something, or facing the wrong way at low speed.
+  if (Math.abs(car.speed) < 25 && throttle > 0 && ctx.time >= car.reverseUntil) {
     car.stuckTimer += dt;
     if (car.stuckTimer > 1.4) {
       car.reverseUntil = ctx.time + 0.7;
@@ -333,22 +361,36 @@ function stepPoliceCar(car, police, ctx, dt) {
   } else {
     car.stuckTimer = 0;
   }
+  if (Math.abs(diff) > 2.4 && speed < 120 && ctx.time >= car.reverseUntil) {
+    car.reverseUntil = ctx.time + 0.9;
+  }
   if (ctx.time < car.reverseUntil) {
-    throttle = -1;
+    throttle = -0.8;
     steer = -steer;
     handbrake = false;
   }
   stepPlayerVehicle(car, ctx.city, { throttle, steer, handbrake }, dt, ctx.effects, null);
 
-  // Ramming the player's car hurts the player too, on a short cooldown.
-  if (player.inCar && police.ramCooldown <= 0) {
-    const distance = Math.hypot(car.x - player.inCar.x, car.y - player.inCar.y);
-    const closing = Math.hypot(car.vx - player.inCar.vx, car.vy - player.inCar.vy);
-    if (distance < carRadius(car.model) + carRadius(player.inCar.model) && closing > 200) {
-      damagePlayer(player, POLICE.ramDamage);
-      police.ramCooldown = POLICE.ramCooldown;
-      ctx.cam.addShake(6);
-      if (ctx.audio) ctx.audio.crash(0.5);
+  // Ramming the player's car hurts the player too, on a short cooldown — and a
+  // pursuit car that runs down the player on foot is worse.
+  if (police.ramCooldown <= 0) {
+    if (player.inCar) {
+      const distance = Math.hypot(car.x - player.inCar.x, car.y - player.inCar.y);
+      const closing = Math.hypot(car.vx - player.inCar.vx, car.vy - player.inCar.vy);
+      if (distance < carRadius(car.model) + carRadius(player.inCar.model) && closing > 200) {
+        damagePlayer(player, POLICE.ramDamage);
+        police.ramCooldown = POLICE.ramCooldown;
+        ctx.cam.addShake(6);
+        if (ctx.audio) ctx.audio.crash(0.5);
+      }
+    } else {
+      const distance = Math.hypot(car.x - player.x, car.y - player.y);
+      if (distance < carRadius(car.model) + 16 && Math.abs(car.speed) > 150) {
+        damagePlayer(player, POLICE.ramDamage * 2);
+        police.ramCooldown = POLICE.ramCooldown;
+        ctx.cam.addShake(8);
+        if (ctx.audio) ctx.audio.crash(0.6);
+      }
     }
   }
 }

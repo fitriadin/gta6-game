@@ -104,6 +104,9 @@ export function makeVehicle(model, colour, x, y, angle, state = 'parked') {
     turnCooldown: 0,
     braking: false,
     smokeTimer: 0,
+    // Seconds until this car can take impact damage again: without a cooldown,
+    // two cars grinding against each other take damage every step and melt.
+    hitCooldown: 0,
   };
 }
 
@@ -329,7 +332,8 @@ export function stepPlayerVehicle(vehicle, city, drive, dt, fx, onCrash) {
   } else {
     const impact = Math.abs(vehicle.vx);
     vehicle.vx *= -0.3;
-    if (impact > 140) {
+    if (impact > 140 && vehicle.hitCooldown <= 0) {
+      vehicle.hitCooldown = 0.5;
       damageVehicle(vehicle, impact / 90);
       if (onCrash) onCrash(impact);
     }
@@ -345,7 +349,8 @@ export function stepPlayerVehicle(vehicle, city, drive, dt, fx, onCrash) {
   } else {
     const impact = Math.abs(vehicle.vy);
     vehicle.vy *= -0.3;
-    if (impact > 140) {
+    if (impact > 140 && vehicle.hitCooldown <= 0) {
+      vehicle.hitCooldown = 0.5;
       damageVehicle(vehicle, impact / 90);
       if (onCrash) onCrash(impact);
     }
@@ -513,8 +518,11 @@ function stepTrafficCar(car, city, vehicles, player, dt) {
 }
 
 /** Push overlapping cars apart and trade a little speed; returns true if the player was hit. */
-function collideCars(vehicles, city, onPlayerCrash) {
+function collideCars(vehicles, city, onPlayerCrash, dt = 1 / 60) {
   let playerHit = false;
+  for (const car of vehicles) {
+    if (car.hitCooldown > 0) car.hitCooldown = Math.max(0, car.hitCooldown - dt);
+  }
   for (let i = 0; i < vehicles.length; i += 1) {
     const a = vehicles[i];
     const ra = carRadius(a.model);
@@ -555,9 +563,17 @@ function collideCars(vehicles, city, onPlayerCrash) {
       }
       const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
       if (closing > 60) {
+        // One impact per car per half-second: two cars leaning on each other
+        // must not take damage every step until they explode.
         const hit = closing / 90;
-        damageVehicle(a, hit);
-        damageVehicle(b, hit);
+        if (a.hitCooldown <= 0) {
+          a.hitCooldown = 0.5;
+          damageVehicle(a, hit);
+        }
+        if (b.hitCooldown <= 0) {
+          b.hitCooldown = 0.5;
+          damageVehicle(b, hit);
+        }
         if (a.state === 'player' || b.state === 'player') {
           playerHit = true;
           if (onPlayerCrash) onPlayerCrash(closing);
@@ -596,5 +612,5 @@ export function stepTraffic(vehicles, city, dt, focus, player, onPlayerCrash) {
     }
     if (car.damage > 55) car.cruise = Math.min(car.cruise, TRAFFIC.cruiseMin * 0.7);
   }
-  collideCars(vehicles, city, onPlayerCrash);
+  collideCars(vehicles, city, onPlayerCrash, dt);
 }

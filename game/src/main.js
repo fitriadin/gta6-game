@@ -440,7 +440,7 @@ function runGame() {
       audio,
       time: state.time,
       addWanted: raiseWanted,
-    });
+    }, STEP);
     stepPolice(state.police, {
       city,
       player,
@@ -451,7 +451,7 @@ function runGame() {
       cam,
       time: state.time,
       onBusted: busted,
-    });
+    }, STEP);
     checkExplosions({
       player,
       vehicles,
