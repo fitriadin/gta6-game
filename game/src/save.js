@@ -1,8 +1,10 @@
 // Save and load through localStorage. The save holds money, missions completed,
 // the player's position, the car they are driving (if any), and settings (mute).
-// Autosave happens on pause; the pause screen also offers a manual save. Storage
-// can be off (private windows) — then the game simply runs without persisting,
-// and load returns null.
+// The wanted level deliberately does NOT persist: a loaded game starts with a
+// clean slate (the police have a short memory between sessions). Autosave happens
+// on pause; the pause screen also offers a manual save. Storage can be off
+// (private windows) — then the game simply runs without persisting, and load
+// returns null.
 
 import { SAVE_KEY } from './config.js';
 
@@ -69,9 +71,11 @@ export function saveGame(state) {
 }
 
 /** Apply a loaded save onto a fresh state object. The saved car (if any) lands
- * on `state.savedCar`; main.js spawns it and puts the player inside. */
+ * on `state.savedCar`; main.js spawns it and puts the player inside. Wanted is
+ * not stored, so loading always clears it. */
 export function applySave(state, save) {
   state.money = save.money || 0;
+  state.wanted = 0;
   state.missionsCompleted = Array.isArray(save.missionsCompleted) ? [...save.missionsCompleted] : [];
   if (save.player && Number.isFinite(save.player.x) && Number.isFinite(save.player.y)) {
     state.player.x = save.player.x;

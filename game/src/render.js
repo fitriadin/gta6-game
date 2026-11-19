@@ -241,7 +241,31 @@ export function createRenderer(canvas) {
         context.roundRect(-sprite.width / 2 + 4, -sprite.height / 2 + 4, sprite.width - 8, sprite.height * 0.3, 6);
         context.fill();
       }
+      // A wreck is a burnt-out shell.
+      if (car.state === 'wreck') {
+        context.fillStyle = 'rgba(12, 12, 14, 0.55)';
+        context.beginPath();
+        context.roundRect(-sprite.width / 2 + 2, -sprite.height / 2 + 2, sprite.width - 4, sprite.height - 4, 8);
+        context.fill();
+      }
       context.restore();
+      // A pursuit car's light bar flashes red and blue, alternating with the
+      // clock — neighbouring cars are half a beat out of phase.
+      if (car.model === 'police' && car.state === 'police') {
+        const phase = (state.time * 4 + car.id * 0.5) % 2;
+        const red = phase < 1;
+        const glow = context.createRadialGradient(car.x, car.y, 4, car.x, car.y, 52);
+        glow.addColorStop(0, red ? 'rgba(229, 83, 75, 0.5)' : 'rgba(59, 130, 246, 0.5)');
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        context.fillStyle = glow;
+        context.beginPath();
+        context.arc(car.x, car.y, 52, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = red ? '#ff5a4e' : '#3b82f6';
+        context.beginPath();
+        context.arc(car.x, car.y - 8, 5, 0, Math.PI * 2);
+        context.fill();
+      }
     }
   }
 
@@ -250,15 +274,47 @@ export function createRenderer(canvas) {
     for (const ped of state.peds) {
       if (ped.state === 'driver') continue;
       if (ped.x < visible.x - 40 || ped.x > visible.x + visible.width + 40 || ped.y < visible.y - 40 || ped.y > visible.y + visible.height + 40) continue;
+      const down = ped.state === 'down';
       drawShadow(context, ped.x, ped.y + 10, 11, 7, 0.28);
       const walking = ped.state === 'walk' || ped.state === 'flee';
       const sprite = personSprite(ped.shirt, ped.skin, walking ? ped.walkCycle : 0);
       context.save();
       context.translate(ped.x, ped.y);
-      context.rotate(ped.angle);
+      if (down) {
+        // Lying flat, fading out as the timer runs down.
+        const remain = Math.max(0, (ped.downUntil - state.time) / 1.5);
+        context.globalAlpha = Math.min(1, remain + 0.25);
+        context.rotate(ped.angle);
+        context.scale(1, 0.7);
+      } else {
+        context.rotate(ped.angle);
+      }
       context.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
       context.restore();
     }
+  }
+
+  /** Bullet tracers: short bright lines along each bullet's path. */
+  function drawBullets(state) {
+    const combat = state.combat;
+    if (!combat || combat.bullets.length === 0) return;
+    context.save();
+    context.lineCap = 'round';
+    for (const bullet of combat.bullets) {
+      const tailX = bullet.x - bullet.vx * 0.02;
+      const tailY = bullet.y - bullet.vy * 0.02;
+      context.strokeStyle = 'rgba(255, 232, 130, 0.9)';
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(tailX, tailY);
+      context.lineTo(bullet.x, bullet.y);
+      context.stroke();
+      context.fillStyle = 'rgba(255, 244, 180, 0.95)';
+      context.beginPath();
+      context.arc(bullet.x, bullet.y, 2.5, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.restore();
   }
 
   function drawPlayer(state) {
@@ -295,6 +351,7 @@ export function createRenderer(canvas) {
     drawVehicles(state, visible);
     drawPedestrians(state, visible);
     drawPlayer(state);
+    drawBullets(state);
     if (state.effects) drawPuffs(context, state.effects, visible);
     context.restore();
     // Warm daylight tint + a soft vignette, in screen space.
@@ -374,6 +431,7 @@ export function createRenderer(canvas) {
       ['Enter / exit / steal car', 'E'],
       ['Aim', 'Mouse'],
       ['Shoot', 'Left click'],
+      ['Punch', 'F'],
       ['Pause', 'P or Esc'],
       ['Mute', 'M'],
     ];
@@ -400,7 +458,7 @@ export function createRenderer(canvas) {
       drawControls();
       return;
     }
-    drawHud(context, state);
+    drawHud(context, state, screen);
     if (screen === SCREEN_PLAY && state.toast && state.time < state.toastUntil) {
       context.font = font(17, 700);
       const width = context.measureText(state.toast).width + 36;

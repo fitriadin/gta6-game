@@ -75,12 +75,100 @@ function drawStars(context, state) {
   const x = VIEW.width - width - 20;
   const y = 76;
   panel(context, x, y, width, 44, 12);
+  // At three stars and up the heat shows: a red rim around the stars.
+  if (wanted >= 3) {
+    context.strokeStyle = 'rgba(229, 83, 75, 0.8)';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.roundRect(x, y, width, 44, 12);
+    context.stroke();
+  }
   context.textAlign = 'left';
   context.textBaseline = 'middle';
   for (let i = 0; i < 5; i += 1) {
     context.fillStyle = i < wanted ? PALETTE.star : PALETTE.starEmpty;
     context.fillText(STAR, x + 10 + i * starWidth, y + 23);
   }
+}
+
+/** The weapon indicator: what is in hand, and how much ammo is left (endless). */
+function drawWeapon(context, state) {
+  const combat = state.combat;
+  if (!combat) return;
+  const name = combat.weapon === 'pistol' ? 'PISTOL' : String(combat.weapon).toUpperCase();
+  context.font = font(17, 800);
+  const nameWidth = context.measureText(name).width;
+  context.font = font(17, 700);
+  const ammoWidth = context.measureText('∞').width;
+  const width = nameWidth + ammoWidth + 56;
+  const height = 40;
+  const driving = !!state.player.inCar;
+  const x = VIEW.width - width - 20;
+  const y = driving ? VIEW.height - height - 20 - 74 : VIEW.height - height - 20;
+  panel(context, x, y, width, height, 12);
+  context.fillStyle = PALETTE.accent;
+  context.textAlign = 'left';
+  context.textBaseline = 'middle';
+  context.fillText('◉', x + 12, y + 21);
+  context.fillStyle = PALETTE.text;
+  context.font = font(17, 800);
+  context.fillText(name, x + 32, y + 21);
+  context.fillStyle = PALETTE.muted;
+  context.font = font(17, 700);
+  context.textAlign = 'right';
+  context.fillText('∞', x + width - 14, y + 21);
+}
+
+/** A big centre-screen banner: BUSTED (and, later, mission banners). */
+function drawBanner(context, state) {
+  const banner = state.banner;
+  if (!banner || state.time >= banner.until) return;
+  const fadeIn = Math.min(1, (state.time - banner.since) / 0.25);
+  const fadeOut = Math.min(1, (banner.until - state.time) / 0.4);
+  const alpha = Math.min(fadeIn, fadeOut);
+  context.save();
+  context.globalAlpha = Math.max(0, Math.min(1, alpha));
+  context.font = font(72, 900);
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.shadowColor = 'rgba(0,0,0,0.6)';
+  context.shadowBlur = 18;
+  context.fillStyle = banner.colour || '#5b9cf5';
+  context.fillText(banner.text, VIEW.width / 2, VIEW.height / 2 - 20);
+  context.shadowBlur = 0;
+  if (banner.sub) {
+    context.font = font(20, 600);
+    context.fillStyle = PALETTE.text;
+    context.fillText(banner.sub, VIEW.width / 2, VIEW.height / 2 + 34);
+  }
+  context.restore();
+}
+
+/** The mouse crosshair: a small ring with a dot, where the next shot will go. */
+function drawCrosshair(context, state) {
+  if (!state.showCrosshair || !state.mouse) return;
+  const { x, y } = state.mouse;
+  context.save();
+  context.strokeStyle = 'rgba(245, 185, 66, 0.95)';
+  context.lineWidth = 2;
+  context.beginPath();
+  context.arc(x, y, 11, 0, Math.PI * 2);
+  context.stroke();
+  context.beginPath();
+  context.moveTo(x - 16, y);
+  context.lineTo(x - 7, y);
+  context.moveTo(x + 7, y);
+  context.lineTo(x + 16, y);
+  context.moveTo(x, y - 16);
+  context.lineTo(x, y - 7);
+  context.moveTo(x, y + 7);
+  context.lineTo(x, y + 16);
+  context.stroke();
+  context.fillStyle = 'rgba(245, 185, 66, 0.95)';
+  context.beginPath();
+  context.arc(x, y, 2, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
 }
 
 function drawObjective(context, state) {
@@ -234,16 +322,27 @@ function drawMinimap(context, state) {
     if (p.x < cx - radius - 20 || p.x > cx + radius || p.y < cy - radius - 20 || p.y > cy + radius) continue;
     context.fillRect(p.x, p.y, Math.max(2, building.width * scale), Math.max(2, building.height * scale));
   }
-  // Traffic: amber dots for moving cars. Police cars (chunk 3) show blue — the
-  // hook is here already, so chunk 3 only has to spawn them.
+  // Traffic: amber dots for moving cars; police cars show blue, and so do the
+  // foot officers (chunk 3) — the player can see the net closing in.
   if (state.vehicles) {
     for (const car of state.vehicles) {
-      if (car.state !== 'traffic') continue;
+      if (car.state !== 'traffic' && car.state !== 'police') continue;
       const p = toMap(car.x, car.y);
       if (p.x < cx - radius || p.x > cx + radius || p.y < cy - radius || p.y > cy + radius) continue;
       context.fillStyle = car.model === 'police' ? '#5b9cf5' : '#f5c542';
       context.beginPath();
       context.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+  if (state.peds) {
+    for (const ped of state.peds) {
+      if (!ped.officer || ped.state === 'down') continue;
+      const p = toMap(ped.x, ped.y);
+      if (p.x < cx - radius || p.x > cx + radius || p.y < cy - radius || p.y > cy + radius) continue;
+      context.fillStyle = '#5b9cf5';
+      context.beginPath();
+      context.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
       context.fill();
     }
   }
@@ -278,8 +377,9 @@ function drawMinimap(context, state) {
   context.fillText('N', cx, cy - radius + 16);
 }
 
-/** Draw the whole HUD for the play screen. */
-export function drawHud(context, state) {
+/** Draw the whole HUD for the play screen. `screen` is the current screen name —
+ * the crosshair only shows while actually playing. */
+export function drawHud(context, state, screen = 'play') {
   drawHealth(context, state);
   drawMoney(context, state);
   drawStars(context, state);
@@ -287,5 +387,8 @@ export function drawHud(context, state) {
   drawDistrict(context, state);
   drawPrompt(context, state);
   drawSpeed(context, state);
+  drawWeapon(context, state);
   drawMinimap(context, state);
+  drawBanner(context, state);
+  if (screen === 'play') drawCrosshair(context, state);
 }

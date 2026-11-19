@@ -1,20 +1,22 @@
 // Boot and the one loop: input is read every frame, the world advances in fixed
 // 1/60 s steps (several in a slow frame, none in a fast one), and the renderer
 // paints what is there. The game moves between five screens: title, play, paused,
-// game over and controls. Vehicles, pedestrians, effects and audio all step inside
-// the same loop, so pausing freezes the whole city at once.
+// game over and controls. Vehicles, pedestrians, effects, audio, police and combat
+// all step inside the same loop, so pausing freezes the whole city at once.
 //
-// ?seed=N fixes the city. ?shot=start|play|drive (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a
-// screenshot.
-import { CAMERA, CITY, DEFAULT_SEED, PEDS, STEP, VEHICLES } from './config.js';
+// ?seed=N fixes the city. ?shot=start|play|drive|chase (with &seed=N) stages that
+// scene instead of running the loop, paints it twice and sets window.__shotReady
+// for a screenshot.
+import { CAMERA, CITY, DEFAULT_SEED, PEDS, PLAYER, POLICE, STEP, VEHICLES, VIEW } from './config.js';
 import { generateCity } from './city.js';
 import { createCamera } from './camera.js';
 import { createPlayer, stepPlayer } from './player.js';
-import { ACTION_CLICK, ACTION_CONFIRM, ACTION_INTERACT, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
+import { ACTION_CLICK, ACTION_CONFIRM, ACTION_INTERACT, ACTION_MELEE, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
 import { createRenderer, SCREEN_CONTROLS, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 import { createVehicles, exitVehicle, makeVehicle, stealVehicle, stepPlayerVehicle, stepTraffic } from './vehicles.js';
 import { createPedestrians, freeDriver, scareNearby, stepPedestrians } from './pedestrians.js';
+import { addWanted, clearPolice, createPolice, stepPolice } from './police.js';
+import { checkExplosions, createCombat, stepCombat, tryMelee, tryShoot } from './combat.js';
 import { createAudio } from './audio.js';
 import { createEffects, stepEffects } from './effects.js';
 import { applySave, hasSave, loadSave, saveGame } from './save.js';
@@ -49,6 +51,8 @@ const state = {
   peds,
   effects,
   audio,
+  police: createPolice(),
+  combat: createCombat(),
   money: 0,
   wanted: 0,
   objective: 'Explore Solmar Bay',
@@ -60,8 +64,18 @@ const state = {
   saveMessage: '',
   toast: '',
   toastUntil: 0,
+  banner: null,
+  mouse: { x: VIEW.width / 2, y: VIEW.height / 2 },
+  showCrosshair: false,
+  fireArmedAt: 0,
   time: 0,
 };
+
+/** Raise the heat and keep the HUD's copy in step. */
+function raiseWanted(amount) {
+  addWanted(state.police, amount, state.time);
+  state.wanted = state.police.wanted;
+}
 
 function showToast(message) {
   state.toast = message;
@@ -110,6 +124,9 @@ function runGame() {
     state.missionsCompleted = [];
     state.objective = 'Explore Solmar Bay';
     state.savedCar = null;
+    state.banner = null;
+    state.police = createPolice();
+    state.combat = createCombat();
     const fresh = createPlayer(city.spawn);
     Object.assign(player, fresh);
     // A new game gets a fresh city of cars and people.
@@ -120,6 +137,7 @@ function runGame() {
     state.peds = peds;
     state.effects = effects;
     cam.snap(player.x, player.y);
+    state.fireArmedAt = state.time + 0.4;
     screen = SCREEN_PLAY;
     announce('Playing. Explore Solmar Bay.');
   }
@@ -132,6 +150,11 @@ function runGame() {
     }
     applySave(state, save);
     audio.setMuted(state.muted);
+    // Wanted never persists: a loaded game starts with a clean slate.
+    state.police = createPolice();
+    state.combat = createCombat();
+    state.wanted = 0;
+    state.banner = null;
     if (state.savedCar) {
       // The saved car is the player's own: put them straight back inside it.
       const saved = state.savedCar;
@@ -142,6 +165,7 @@ function runGame() {
       state.savedCar = null;
     }
     cam.snap(player.x, player.y);
+    state.fireArmedAt = state.time + 0.4;
     screen = SCREEN_PLAY;
     announce('Continuing your game.');
   }
@@ -151,13 +175,42 @@ function runGame() {
     state.menuIndex = 0;
     state.saveMessage = '';
     audio.setEngine(0, false);
+    audio.setSiren(0);
     saveGame(state);
     announce('Paused. Progress saved.');
   }
 
   function resumeGame() {
     screen = SCREEN_PLAY;
+    state.fireArmedAt = state.time + 0.4;
     announce('Playing.');
+  }
+
+  /** Busted: the car stays where it was, the player loses 10% of their money,
+   * wakes up at the police station with a clean slate, and the banner says so. */
+  function busted() {
+    if (state.police.wanted <= 0) return;
+    if (player.inCar) exitVehicle(player, player.inCar, city);
+    const lost = state.money - Math.floor(state.money * 0.9);
+    state.money = Math.floor(state.money * 0.9);
+    player.health = PLAYER.maxHealth;
+    player.x = POLICE.station.x;
+    player.y = POLICE.station.y;
+    player.angle = Math.PI;
+    clearPolice(state.police, vehicles, peds);
+    state.wanted = 0;
+    audio.busted();
+    audio.setSiren(0);
+    audio.setEngine(0, false);
+    cam.snap(player.x, player.y);
+    state.banner = {
+      text: 'BUSTED',
+      sub: lost > 0 ? `The police took $${lost.toLocaleString('en-US')} in fines.` : 'The police let you off with a warning.',
+      since: state.time,
+      until: state.time + 3,
+      colour: '#5b9cf5',
+    };
+    announce('Busted. You lost some money and woke up at the police station.');
   }
 
   function openControls(from) {
@@ -175,6 +228,7 @@ function runGame() {
     saveGame(state);
     state.hasSave = true;
     audio.setEngine(0, false);
+    audio.setSiren(0);
     screen = SCREEN_TITLE;
     state.menuIndex = 0;
     titleStop = 0;
@@ -278,8 +332,27 @@ function runGame() {
         scareNearby(peds, car.x, car.y, PEDS.stealRadius, state.time);
         audio.door();
         audio.steal();
-        showToast(occupied ? `You pulled the driver out of the ${car.model}!` : `You stole the ${car.model}!`);
-        // Chunk 3 hooks the wanted stars up here: stealing is a crime.
+        const wasClean = state.police.wanted === 0;
+        raiseWanted(POLICE.crime.steal);
+        showToast(
+          occupied
+            ? `You pulled the driver out of the ${car.model}!`
+            : `You stole the ${car.model}!` + (wasClean ? ' The police are onto you.' : ''),
+        );
+      }
+    }
+    if (actions & ACTION_MELEE) {
+      // A punch on foot (F) — not while driving.
+      if (!player.inCar) {
+        tryMelee(state.combat, {
+          player,
+          peds,
+          police: state.police,
+          effects,
+          audio,
+          time: state.time,
+          addWanted: raiseWanted,
+        });
       }
     }
   }
@@ -336,12 +409,69 @@ function runGame() {
     }
     stepTraffic(vehicles, city, STEP, cam.camera, player, onCrash);
     stepPedestrians(peds, city, vehicles, player, STEP, cam.camera, state.time);
+    // Shooting: hold the mouse button and the pistol fires at the crosshair —
+    // from the car window too (a drive-by, wild but fast). Firing stays disarmed
+    // for a beat after entering play, so the click that started the game never
+    // fires a shot.
+    state.mouse = input.mousePosition();
+    state.showCrosshair = true;
+    if (input.mouseDown() && state.time > state.fireArmedAt) {
+      const aimWorld = {
+        x: cam.camera.x + (state.mouse.x - VIEW.width / 2) / cam.camera.zoom,
+        y: cam.camera.y + (state.mouse.y - VIEW.height / 2) / cam.camera.zoom,
+      };
+      const origin = { x: player.x, y: player.y };
+      const angle = Math.atan2(aimWorld.y - origin.y, aimWorld.x - origin.x);
+      tryShoot(state.combat, origin, angle, { driveBy: !!player.inCar }, {
+        effects,
+        audio,
+        police: state.police,
+        time: state.time,
+        addWanted: raiseWanted,
+      });
+    }
+    stepCombat(state.combat, {
+      city,
+      player,
+      vehicles,
+      peds,
+      police: state.police,
+      effects,
+      audio,
+      time: state.time,
+      addWanted: raiseWanted,
+    });
+    stepPolice(state.police, {
+      city,
+      player,
+      vehicles,
+      peds,
+      effects,
+      audio,
+      cam,
+      time: state.time,
+      onBusted: busted,
+    });
+    checkExplosions({
+      player,
+      vehicles,
+      peds,
+      police: state.police,
+      effects,
+      audio,
+      cam,
+      time: state.time,
+      addWanted: raiseWanted,
+      onPlayerExitCar: (car) => exitVehicle(player, car, city),
+    });
+    state.wanted = state.police.wanted;
     stepEffects(effects, STEP);
     cam.follow(player.x, player.y, STEP);
     cam.update(STEP);
     if (player.health <= 0) {
       screen = SCREEN_OVER;
       audio.setEngine(0, false);
+      audio.setSiren(0);
       announce('Wasted.');
     }
   }

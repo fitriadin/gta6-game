@@ -1,7 +1,7 @@
-// The screenshot scenes behind ?shot=start|play|drive (chunks 3–4 add chase and
-// mission). Each one stages the real game at a fixed, scenic state from the given
-// seed, so the same seed always gives the same frame. The main loop paints the staged
-// scene twice and then sets window.__shotReady for the screenshot.
+// The screenshot scenes behind ?shot=start|play|drive|chase (chunk 4 adds mission).
+// Each one stages the real game at a fixed, scenic state from the given seed, so the
+// same seed always gives the same frame. The main loop paints the staged scene twice
+// and then sets window.__shotReady for the screenshot.
 
 import { SCREEN_PLAY, SCREEN_TITLE } from './render.js';
 import { stepPlayer } from './player.js';
@@ -69,6 +69,54 @@ export function stageShot(name, state) {
     if (state.effects) {
       state.effects.addSkid(2612, 1560, 2616, 1640);
       state.effects.addSkid(2640, 1560, 2644, 1640);
+    }
+    state.cam.snap(state.player.x, state.player.y);
+    return { screen: SCREEN_PLAY };
+  }
+
+  if (name === 'chase') {
+    // A police chase down the Downtown avenue: the player in a stolen sedan,
+    // three police cars on their tail with lights flashing, three wanted stars
+    // lit, skid marks behind, and a traffic car scattering ahead.
+    state.money = 450;
+    state.wanted = 3;
+    state.objective = 'Lose the police';
+    if (state.police) state.police.wanted = 3;
+    const car = makeVehicle('sedan', '#c94f43', 2626, 1500, Math.PI, 'parked');
+    state.vehicles.push(car);
+    stealVehicle(state.player, car);
+    car.speed = 480;
+    car.vx = 0;
+    car.vy = 480;
+    // Three pursuit cars: two tight behind in the same lane, one pulling
+    // alongside to box the player in. Odd ids flash red, even ones blue, so
+    // the frozen frame shows both colours.
+    const pursuit = [
+      { x: 2626, y: 1690, angle: Math.PI },
+      { x: 2626, y: 1820, angle: Math.PI },
+      { x: 2678, y: 1580, angle: Math.PI },
+    ];
+    pursuit.forEach((spot) => {
+      const cop = makeVehicle('police', '#f2f2f2', spot.x, spot.y, spot.angle, 'police');
+      cop.role = 'chase';
+      cop.stuckTimer = 0;
+      cop.reverseUntil = 0;
+      cop.blockUntil = 0;
+      cop.boxSide = 1;
+      cop.speed = 460;
+      cop.vx = 0;
+      cop.vy = 460;
+      state.vehicles.push(cop);
+      if (state.police) state.police.cars.push(cop);
+    });
+    // A taxi ahead, braking out of the way.
+    addTrafficCar(state.vehicles, { model: 'taxi', colour: '#f5c542', x: 2626, y: 1230, angle: Math.PI, axis: 'v', roadPos: 2650, dir: 1, cruise: 280, speed: 280 });
+    // Skid marks from the chase: a swerve behind the player's car.
+    if (state.effects) {
+      state.effects.addSkid(2608, 1520, 2618, 1620);
+      state.effects.addSkid(2636, 1520, 2646, 1620);
+      state.effects.addSkid(2618, 1620, 2604, 1720);
+      state.effects.addSkid(2646, 1620, 2632, 1720);
     }
     state.cam.snap(state.player.x, state.player.y);
     return { screen: SCREEN_PLAY };
