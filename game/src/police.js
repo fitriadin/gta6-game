@@ -65,6 +65,13 @@ function nearestChaseCarDistance(police, x, y) {
   return best;
 }
 
+/** Distance to the nearest police car of any role, or Infinity when none is out. */
+function nearestPoliceCarDistance(police, x, y) {
+  let best = Infinity;
+  for (const car of police.cars) best = Math.min(best, Math.hypot(car.x - x, car.y - y));
+  return best;
+}
+
 /** Pull every unit off the street and clear the heat (busted, or the trail went cold). */
 export function clearPolice(police, vehicles, peds) {
   for (const car of police.cars) {
@@ -699,7 +706,14 @@ export function stepPolice(police, ctx, dt) {
   checkPedStrikes(police, ctx);
 
   // Out of sight, out of mind: a long clean stretch drops a star at a time.
-  const nearest = nearestPoliceDistance(police, ctx.player.x, ctx.player.y);
+  // A player in a car is judged by the cars alone: a foot officer beelines
+  // through blocks while the car must follow the road grid, so the officer
+  // keeps up with any car averaging under ~450 and the heat could never decay
+  // (probe after probe ended with the cars gone and one officer glued to the
+  // bumper). On foot the officers count as normal — they are right there.
+  const nearest = ctx.player.inCar
+    ? nearestPoliceCarDistance(police, ctx.player.x, ctx.player.y)
+    : nearestPoliceDistance(police, ctx.player.x, ctx.player.y);
   if (nearest > POLICE.hiddenRange) {
     police.cleanTime += dt;
     if (police.cleanTime >= POLICE.decaySeconds) {
