@@ -112,6 +112,7 @@ function spawnPoliceCar(police, ctx, role = 'chase') {
   car.stuckTimer = 0;
   car.reverseUntil = 0;
   car.blockUntil = 0;
+  car.recoverUntil = 0;
   car.boxSide = police.cars.length % 2 === 0 ? 1 : -1;
   if (point) {
     car.axis = point.axis;
@@ -361,19 +362,25 @@ function stepPoliceCar(car, police, ctx, dt) {
     // Slow down for the intersection turn, or the car blows straight past it.
     braking = true;
   }
-  // A pursuit car touching the player's car backs off instead of leaning on
-  // it. A cop glued to the player's bumper can never be shaken — the shove
-  // herds the player into buildings and traffic, the car takes damage until
-  // the engine chokes, and the chase ends in a wreck every time (eight escape
-  // probes, zero successes). Backing off after contact gives the player a
-  // window to pull away, and the chase stays a chase: the cop charges back in,
-  // touches, and falls back again, losing a little ground each cycle.
+  // A pursuit car that touches the player's car needs a moment to recover: it
+  // brakes for a beat instead of leaning on the bumper. A cop glued to the
+  // player's bumper can never be shaken — the shove herds the player into
+  // buildings and traffic, the car takes damage until the engine chokes, and
+  // the chase ends in a wreck every time (ten escape probes, zero successes).
+  // Backing off alone was not enough either (the pack re-glued instantly and
+  // the gap plateaued around 530, short of the 650 give-up range), so the
+  // recovery is on a timer: each touch buys the player a real window to pull
+  // away, and the chase stays a chase — the cop charges back in, touches, and
+  // falls back again, losing ground each cycle.
   if (player.inCar) {
     const touch = Math.hypot(car.x - player.inCar.x, car.y - player.inCar.y);
     if (touch < carRadius(car.model) + carRadius(player.inCar.model) + 6) {
-      braking = true;
-      throttle = 0;
+      car.recoverUntil = Math.max(car.recoverUntil || 0, ctx.time + 1.5);
     }
+  }
+  if (ctx.time < (car.recoverUntil || 0)) {
+    braking = true;
+    throttle = 0;
   }
   let steer = clamp(diff * 2.4, -1, 1);
   let handbrake = braking || (Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350);
