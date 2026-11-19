@@ -1,16 +1,22 @@
 // Boot and the one loop: input is read every frame, the world advances in fixed
 // 1/60 s steps (several in a slow frame, none in a fast one), and the renderer
 // paints what is there. The game moves between five screens: title, play, paused,
-// game over and controls.
+// game over and controls. Vehicles, pedestrians, effects and audio all step inside
+// the same loop, so pausing freezes the whole city at once.
 //
-// ?seed=N fixes the city. ?shot=start|play (with &seed=N) stages that scene instead
-// of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { CAMERA, CITY, DEFAULT_SEED, STEP } from './config.js';
+// ?seed=N fixes the city. ?shot=start|play|drive (with &seed=N) stages that scene
+// instead of running the loop, paints it twice and sets window.__shotReady for a
+// screenshot.
+import { CAMERA, CITY, DEFAULT_SEED, PEDS, STEP, VEHICLES } from './config.js';
 import { generateCity } from './city.js';
 import { createCamera } from './camera.js';
 import { createPlayer, stepPlayer } from './player.js';
 import { ACTION_CLICK, ACTION_CONFIRM, ACTION_INTERACT, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
 import { createRenderer, SCREEN_CONTROLS, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+import { createVehicles, exitVehicle, makeVehicle, stealVehicle, stepPlayerVehicle, stepTraffic } from './vehicles.js';
+import { createPedestrians, freeDriver, scareNearby, stepPedestrians } from './pedestrians.js';
+import { createAudio } from './audio.js';
+import { createEffects, stepEffects } from './effects.js';
 import { applySave, hasSave, loadSave, saveGame } from './save.js';
 import { stageShot } from './shots.js';
 
@@ -30,16 +36,25 @@ const city = generateCity(seed);
 const cam = createCamera();
 const player = createPlayer(city.spawn);
 const renderer = createRenderer(canvas);
+const audio = createAudio();
+let vehicles = createVehicles(city);
+let peds = createPedestrians(city, vehicles);
+let effects = createEffects();
 
 const state = {
   city,
   player,
   cam,
+  vehicles,
+  peds,
+  effects,
+  audio,
   money: 0,
   wanted: 0,
   objective: 'Explore Solmar Bay',
   missionsCompleted: [],
   muted: false,
+  savedCar: null,
   hasSave: hasSave(),
   menuIndex: 0,
   saveMessage: '',
@@ -92,8 +107,16 @@ function runGame() {
     state.wanted = 0;
     state.missionsCompleted = [];
     state.objective = 'Explore Solmar Bay';
+    state.savedCar = null;
     const fresh = createPlayer(city.spawn);
     Object.assign(player, fresh);
+    // A new game gets a fresh city of cars and people.
+    vehicles = createVehicles(city);
+    peds = createPedestrians(city, vehicles);
+    effects = createEffects();
+    state.vehicles = vehicles;
+    state.peds = peds;
+    state.effects = effects;
     cam.snap(player.x, player.y);
     screen = SCREEN_PLAY;
     announce('Playing. Explore Solmar Bay.');
@@ -106,6 +129,16 @@ function runGame() {
       return;
     }
     applySave(state, save);
+    audio.setMuted(state.muted);
+    if (state.savedCar) {
+      // The saved car is the player's own: put them straight back inside it.
+      const saved = state.savedCar;
+      const car = makeVehicle(saved.model, saved.colour || '#3f7fc9', saved.x, saved.y, saved.angle || 0, 'parked');
+      car.damage = saved.damage || 0;
+      vehicles.push(car);
+      stealVehicle(player, car);
+      state.savedCar = null;
+    }
     cam.snap(player.x, player.y);
     screen = SCREEN_PLAY;
     announce('Continuing your game.');
@@ -115,6 +148,7 @@ function runGame() {
     screen = SCREEN_PAUSED;
     state.menuIndex = 0;
     state.saveMessage = '';
+    audio.setEngine(0, false);
     saveGame(state);
     announce('Paused. Progress saved.');
   }
@@ -138,6 +172,7 @@ function runGame() {
   function quitToTitle() {
     saveGame(state);
     state.hasSave = true;
+    audio.setEngine(0, false);
     screen = SCREEN_TITLE;
     state.menuIndex = 0;
     titleStop = 0;
@@ -177,8 +212,11 @@ function runGame() {
   function handleActions() {
     const actions = input.takeActions();
     const move = input.move();
+    // Any key or click is a user gesture: wake the audio graph on the first one.
+    if (actions) audio.start();
     if (actions & ACTION_MUTE) {
       state.muted = !state.muted;
+      audio.setMuted(state.muted);
       announce(state.muted ? 'Muted.' : 'Sound on.');
     }
 
@@ -227,9 +265,28 @@ function runGame() {
       return;
     }
     if (actions & ACTION_INTERACT) {
-      // Chunk 2 wires stealing; for now the car is locked and says so.
-      if (player.nearCar) showToast('Locked — stealing cars comes with the next update.');
+      if (player.inCar) {
+        exitVehicle(player, player.inCar, city);
+        audio.door();
+      } else if (player.nearCar) {
+        const car = player.nearCar;
+        const occupied = car.state === 'traffic';
+        const driver = stealVehicle(player, car);
+        if (driver) freeDriver(driver, car.x, car.y, state.time);
+        scareNearby(peds, car.x, car.y, PEDS.stealRadius, state.time);
+        audio.door();
+        audio.steal();
+        showToast(occupied ? `You pulled the driver out of the ${car.model}!` : `You stole the ${car.model}!`);
+        // Chunk 3 hooks the wanted stars up here: stealing is a crime.
+      }
     }
+  }
+
+  /** A crash: shake the view, thud, and scare the neighbours. */
+  function onCrash(impact) {
+    cam.addShake(Math.min(14, impact / 45));
+    audio.crash(Math.min(1, impact / 600));
+    scareNearby(peds, player.x, player.y, PEDS.stealRadius, state.time);
   }
 
   function step() {
@@ -246,15 +303,43 @@ function runGame() {
         cam.camera.x += (dx / distance) * speed * STEP;
         cam.camera.y += (dy / distance) * speed * STEP;
       }
+      // Traffic and pedestrians live behind the title too.
+      stepTraffic(vehicles, city, STEP, cam.camera, player, null);
+      stepPedestrians(peds, city, vehicles, player, STEP, cam.camera, state.time);
+      stepEffects(effects, STEP);
       cam.update(STEP);
       return;
     }
     if (screen !== SCREEN_PLAY) return;
-    stepPlayer(player, city, input.move(), input.sprinting(), STEP);
+    const move = input.move();
+    if (player.inCar) {
+      const car = player.inCar;
+      const tune = VEHICLES[car.model] || VEHICLES.sedan;
+      stepPlayerVehicle(
+        car,
+        city,
+        { throttle: -move.y, steer: move.x, handbrake: input.sprinting() },
+        STEP,
+        effects,
+        onCrash,
+      );
+      player.x = car.x;
+      player.y = car.y;
+      player.angle = car.angle;
+      player.nearCar = null;
+      audio.setEngine(Math.min(1, Math.abs(car.speed) / tune.maxSpeed), true);
+    } else {
+      stepPlayer(player, city, move, input.sprinting(), STEP, vehicles);
+      audio.setEngine(0, false);
+    }
+    stepTraffic(vehicles, city, STEP, cam.camera, player, onCrash);
+    stepPedestrians(peds, city, vehicles, player, STEP, cam.camera, state.time);
+    stepEffects(effects, STEP);
     cam.follow(player.x, player.y, STEP);
     cam.update(STEP);
     if (player.health <= 0) {
       screen = SCREEN_OVER;
+      audio.setEngine(0, false);
       announce('Wasted.');
     }
   }
@@ -278,6 +363,8 @@ function runGame() {
   });
 
   announce('Solmar City. Press Enter or click to start.');
+  // Debug handle for automated playtests: window.__solmar exposes live state.
+  window.__solmar = state;
   requestAnimationFrame(frame);
 }
 

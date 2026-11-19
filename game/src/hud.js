@@ -4,6 +4,7 @@
 
 import { CITY, FONT, MINIMAP, PALETTE, PLAYER, VIEW } from './config.js';
 import { districtAt } from './city.js';
+import { vehicleKmh } from './vehicles.js';
 
 const STAR = '★';
 const fonts = new Map();
@@ -112,8 +113,9 @@ function drawDistrict(context, state) {
 }
 
 function drawPrompt(context, state) {
-  if (!state.player.nearCar) return;
-  const text = 'Press E to steal the car';
+  const driving = !!state.player.inCar;
+  if (!driving && !state.player.nearCar) return;
+  const text = driving ? 'Press E to exit the car' : 'Press E to steal the car';
   context.font = font(18, 700);
   const width = context.measureText(text).width + 48;
   const x = (VIEW.width - width) / 2;
@@ -130,6 +132,43 @@ function drawPrompt(context, state) {
   context.fillStyle = PALETTE.text;
   context.textAlign = 'left';
   context.fillText(text, x + 44, y + 22);
+}
+
+/** The speedometer: only while driving, bottom-right, with the car's condition. */
+function drawSpeed(context, state) {
+  const car = state.player.inCar;
+  if (!car) return;
+  const kmh = String(vehicleKmh(car));
+  context.font = font(34, 800);
+  const numberWidth = context.measureText(kmh).width;
+  context.font = font(15, 700);
+  const unitWidth = context.measureText('km/h').width;
+  const width = Math.max(150, numberWidth + unitWidth + 52);
+  const height = 62;
+  const x = VIEW.width - width - 20;
+  const y = VIEW.height - height - 20;
+  panel(context, x, y, width, height, 12);
+  context.font = font(34, 800);
+  context.fillStyle = PALETTE.text;
+  context.textAlign = 'right';
+  context.textBaseline = 'middle';
+  context.fillText(kmh, x + width - 16 - unitWidth - 6, y + 26);
+  context.font = font(15, 700);
+  context.fillStyle = PALETTE.muted;
+  context.fillText('km/h', x + width - 16, y + 26);
+  // Damage bar under the number: green while sound, red as the car falls apart.
+  const barWidth = width - 32;
+  const damageFraction = 1 - car.damage / 100;
+  context.fillStyle = 'rgba(0,0,0,0.55)';
+  context.beginPath();
+  context.roundRect(x + 16, y + height - 16, barWidth, 7, 3);
+  context.fill();
+  context.fillStyle = damageFraction < 0.3 ? PALETTE.healthLow : PALETTE.health;
+  if (damageFraction > 0) {
+    context.beginPath();
+    context.roundRect(x + 16, y + height - 16, Math.max(6, barWidth * damageFraction), 7, 3);
+    context.fill();
+  }
 }
 
 /** The circular minimap: sea, roads, parks, buildings, the player arrow, north up. */
@@ -195,6 +234,19 @@ function drawMinimap(context, state) {
     if (p.x < cx - radius - 20 || p.x > cx + radius || p.y < cy - radius - 20 || p.y > cy + radius) continue;
     context.fillRect(p.x, p.y, Math.max(2, building.width * scale), Math.max(2, building.height * scale));
   }
+  // Traffic: amber dots for moving cars. Police cars (chunk 3) show blue — the
+  // hook is here already, so chunk 3 only has to spawn them.
+  if (state.vehicles) {
+    for (const car of state.vehicles) {
+      if (car.state !== 'traffic') continue;
+      const p = toMap(car.x, car.y);
+      if (p.x < cx - radius || p.x > cx + radius || p.y < cy - radius || p.y > cy + radius) continue;
+      context.fillStyle = car.model === 'police' ? '#5b9cf5' : '#f5c542';
+      context.beginPath();
+      context.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
   // The player: a white arrow pointing where they face.
   context.save();
   context.translate(cx, cy);
@@ -234,5 +286,6 @@ export function drawHud(context, state) {
   drawObjective(context, state);
   drawDistrict(context, state);
   drawPrompt(context, state);
+  drawSpeed(context, state);
   drawMinimap(context, state);
 }

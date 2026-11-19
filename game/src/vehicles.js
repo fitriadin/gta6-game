@@ -110,16 +110,16 @@ function spawnTrafficCar(city, focusX, focusY, random) {
 }
 
 /**
- * Build the vehicle set: every parked car from the city becomes a parked vehicle
- * (the city's list is emptied so the renderer draws each car once, from here),
- * plus a fleet of traffic cars around the spawn.
+ * Build the vehicle set: every parked car from the city becomes a parked vehicle,
+ * plus a fleet of traffic cars around the spawn. The city's parked list is left
+ * intact — it is the source a fresh game regenerates from — and the renderer draws
+ * from this list, never from both.
  */
 export function createVehicles(city, random = Math.random) {
   const vehicles = [];
   for (const parked of city.parkedCars) {
     vehicles.push(makeVehicle(parked.model, parked.colour, parked.x, parked.y, parked.angle, 'parked'));
   }
-  city.parkedCars.length = 0;
   for (let i = 0; i < TRAFFIC.count; i += 1) {
     vehicles.push(spawnTrafficCar(city, city.spawn.x, city.spawn.y, random));
   }

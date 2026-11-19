@@ -1,9 +1,10 @@
 // The player on foot: movement with building collision, facing, stamina, health,
-// and the "press E" prompt when a parked car is near. Driving hooks live here too —
-// chunk 2 wires enter/exit; for now the prompt is detection only.
+// and the "press E" prompt when a stealable car is near. When the player is in a
+// car, vehicles.js drives and this module stands aside; enter/exit live there.
 
 import { CITY, PARKED_CAR, PLAYER } from './config.js';
 import { circleHitsBuilding, nearestParkedCar } from './city.js';
+import { nearestVehicle } from './vehicles.js';
 
 export function createPlayer(spawn) {
   return {
@@ -21,8 +22,17 @@ export function createPlayer(spawn) {
   };
 }
 
-/** Move the player one fixed step. `move` is a normalised {x, y}; `sprint` is held Space. */
-export function stepPlayer(player, city, move, sprint, dt) {
+/** Move the player one fixed step. `move` is a normalised {x, y}; `sprint` is held Space.
+ * `vehicles` (when given) is the live vehicle list, so the car prompt covers parked
+ * and traffic cars; without it the prompt falls back to the city's parked cars. */
+export function stepPlayer(player, city, move, sprint, dt, vehicles = null) {
+  if (player.inCar) {
+    // Driving: the car carries the player; the prompt is the exit prompt instead.
+    player.nearCar = null;
+    player.moving = false;
+    player.running = false;
+    return;
+  }
   const wantsToMove = move.x !== 0 || move.y !== 0;
 
   // Stamina: sprint drains, rest refills; empty means winded until half full again.
@@ -56,8 +66,10 @@ export function stepPlayer(player, city, move, sprint, dt) {
   player.x = Math.max(CITY.seaWidth + 6, Math.min(CITY.width - PLAYER.radius, player.x));
   player.y = Math.max(PLAYER.radius, Math.min(CITY.height - PLAYER.radius, player.y));
 
-  // The car prompt: the nearest parked car within reach.
-  player.nearCar = nearestParkedCar(city, player.x, player.y, PARKED_CAR.promptRange);
+  // The car prompt: the nearest stealable car within reach — parked or in traffic.
+  player.nearCar = vehicles
+    ? nearestVehicle(vehicles, player.x, player.y, PARKED_CAR.promptRange)
+    : nearestParkedCar(city, player.x, player.y, PARKED_CAR.promptRange);
 }
 
 export function damagePlayer(player, amount) {

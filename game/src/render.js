@@ -4,7 +4,8 @@
 // are panels drawn over the living city. The HUD comes from hud.js.
 
 import { CITY, FONT, PALETTE, VIEW } from './config.js';
-import { carSprite, drawShadow, palmSprite, playerSprite, roofSprite, treeSprite } from './sprites.js';
+import { carSprite, drawShadow, palmSprite, personSprite, playerSprite, roofSprite, treeSprite } from './sprites.js';
+import { drawPuffs, drawSkids } from './effects.js';
 import { drawHud } from './hud.js';
 
 export const SCREEN_TITLE = 'title';
@@ -221,8 +222,11 @@ export function createRenderer(canvas) {
     }
   }
 
-  function drawParkedCars(state, visible) {
-    for (const car of state.city.parkedCars) {
+  /** Every car: parked, in traffic, or the player's. Falls back to the city's
+   * parked list when the vehicle system is not wired in (old saves, tests). */
+  function drawVehicles(state, visible) {
+    const cars = state.vehicles || state.city.parkedCars;
+    for (const car of cars) {
       if (car.x < visible.x - 60 || car.x > visible.x + visible.width + 60 || car.y < visible.y - 60 || car.y > visible.y + visible.height + 60) continue;
       const sprite = carSprite(car.model, car.colour);
       context.save();
@@ -230,12 +234,36 @@ export function createRenderer(canvas) {
       drawShadow(context, 0, 2, sprite.width / 2, sprite.height / 2, 0.28);
       context.rotate(car.angle);
       context.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+      // A battered car shows its damage: a dark, scorched bonnet.
+      if (car.damage > 55) {
+        context.fillStyle = `rgba(20, 20, 24, ${Math.min(0.55, (car.damage - 55) / 100)})`;
+        context.beginPath();
+        context.roundRect(-sprite.width / 2 + 4, -sprite.height / 2 + 4, sprite.width - 8, sprite.height * 0.3, 6);
+        context.fill();
+      }
+      context.restore();
+    }
+  }
+
+  function drawPedestrians(state, visible) {
+    if (!state.peds) return;
+    for (const ped of state.peds) {
+      if (ped.state === 'driver') continue;
+      if (ped.x < visible.x - 40 || ped.x > visible.x + visible.width + 40 || ped.y < visible.y - 40 || ped.y > visible.y + visible.height + 40) continue;
+      drawShadow(context, ped.x, ped.y + 10, 11, 7, 0.28);
+      const walking = ped.state === 'walk' || ped.state === 'flee';
+      const sprite = personSprite(ped.shirt, ped.skin, walking ? ped.walkCycle : 0);
+      context.save();
+      context.translate(ped.x, ped.y);
+      context.rotate(ped.angle);
+      context.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
       context.restore();
     }
   }
 
   function drawPlayer(state) {
     const player = state.player;
+    if (player.inCar) return;
     drawShadow(context, player.x, player.y + 10, 14, 8, 0.3);
     const sprite = playerSprite(player.moving ? player.walkCycle : 0);
     context.save();
@@ -261,10 +289,13 @@ export function createRenderer(canvas) {
     drawGround(state);
     drawRoads(state);
     drawParks(state, visible);
+    if (state.effects) drawSkids(context, state.effects, visible);
     drawBuildings(state, visible);
     drawProps(state, visible);
-    drawParkedCars(state, visible);
+    drawVehicles(state, visible);
+    drawPedestrians(state, visible);
     drawPlayer(state);
+    if (state.effects) drawPuffs(context, state.effects, visible);
     context.restore();
     // Warm daylight tint + a soft vignette, in screen space.
     context.fillStyle = 'rgba(255, 214, 130, 0.07)';
