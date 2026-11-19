@@ -168,9 +168,19 @@ export function panicPed(ped, fromX, fromY, time) {
   ped.state = 'flee';
   const dx = ped.x - fromX;
   const dy = ped.y - fromY;
-  const distance = Math.hypot(dx, dy) || 1;
-  ped.fleeX = dx / distance;
-  ped.fleeY = dy / distance;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1) {
+    // Standing exactly on the danger (a freed driver, at their car's centre):
+    // a zero flee vector would leave them frozen in the road, where the next
+    // car runs them over. Flee in a random direction instead — any direction
+    // beats standing still.
+    const angle = Math.random() * Math.PI * 2;
+    ped.fleeX = Math.cos(angle);
+    ped.fleeY = Math.sin(angle);
+  } else {
+    ped.fleeX = dx / distance;
+    ped.fleeY = dy / distance;
+  }
   ped.fleeUntil = time + 2.5 + Math.random() * 1.5;
 }
 
