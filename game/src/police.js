@@ -190,8 +190,9 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-/** The road centre-line nearest a point, with its distance. */
-function nearestRoad(city, x, y) {
+/** The road centre-line nearest a point, with its distance. Exported: the
+ * mission rivals navigate the same road grid, so they share this helper. */
+export function nearestRoad(city, x, y) {
   let best = null;
   let bestDistance = Infinity;
   for (const road of city.vRoads) {
@@ -217,8 +218,12 @@ function nearestRoad(city, x, y) {
  * every move is then collision-blocked), so the car drives the road grid
  * instead: along its own road to the intersection with the player's road, turn,
  * and only beeline once both are on the same road.
+ *
+ * Exported: the mission rivals (missions.js) drive the same grid — a rival
+ * that beelined at the player wedged against building faces and could never
+ * be finished, which made mission 4 uncompletable.
  */
-function pursuitAim(car, player, city) {
+export function pursuitAim(car, player, city) {
   const playerRoad = nearestRoad(city, player.x, player.y);
   if (car.axis === playerRoad.axis && car.roadPos === playerRoad.pos && playerRoad.dist < 70) {
     return { x: player.x, y: player.y, direct: true };
@@ -253,8 +258,9 @@ function pursuitAim(car, player, city) {
   return { x: targetX, y: car.roadPos, direct: false };
 }
 
-/** Is the point near an intersection with a road of the other axis? */
-function nearIntersection(city, x, y, axis) {
+/** Is the point near an intersection with a road of the other axis? Exported
+ * for the mission rivals, which re-adopt their road the same way. */
+export function nearIntersection(city, x, y, axis) {
   if (axis === 'v') {
     for (const road of city.hRoads) {
       if (Math.abs(y - road.y) < 70) return true;
