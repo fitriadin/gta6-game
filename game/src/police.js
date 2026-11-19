@@ -571,9 +571,20 @@ function checkPedStrikes(police, ctx) {
   if (!car) return;
   const speed = Math.abs(car.speed);
   if (speed < 120) return;
+  // The strike zone is the car's own rectangle, not a circle around it. A
+  // 32-unit circle struck sidewalk peds the car merely drove past — the
+  // sidewalk line sits 20 units from the driving lane, inside the circle — so
+  // any fast drive through town stacked stars for peds who were never in the
+  // car's path. A ped must be in the rectangle to be hit.
+  const fwd = forwardOf(car.angle);
+  const rgt = rightOf(car.angle);
   for (const ped of ctx.peds) {
     if (ped.officer || ped.state === 'driver' || ped.state === 'down') continue;
-    if (Math.hypot(ped.x - car.x, ped.y - car.y) > 32) continue;
+    const dx = ped.x - car.x;
+    const dy = ped.y - car.y;
+    const along = dx * fwd.x + dy * fwd.y;
+    const side = dx * rgt.x + dy * rgt.y;
+    if (Math.abs(along) > 38 || Math.abs(side) > 19) continue;
     const killed = speed > 300;
     ped.health = killed ? 0 : Math.max(0, ped.health - 50);
     setPedDown(ped, ctx.time, killed ? 6 : 3);
