@@ -120,6 +120,11 @@ function spawnPoliceCar(police, ctx, role = 'chase') {
   car.reverseUntil = 0;
   car.blockUntil = 0;
   car.recoverUntil = 0;
+  // A chase car only gives up once it has actually engaged the player (been
+  // within give-up range): fresh cars spawn 800–1300 out, past that range, so
+  // without this flag every spawn despawned on its first step and no pursuit
+  // ever happened at all.
+  car.engaged = false;
   car.boxSide = police.cars.length % 2 === 0 ? 1 : -1;
   if (point) {
     car.axis = point.axis;
@@ -664,11 +669,13 @@ export function stepPolice(police, ctx, dt) {
       continue;
     }
     const carDistance = Math.hypot(car.x - ctx.player.x, car.y - ctx.player.y);
+    if (carDistance < POLICE.giveUpRange) car.engaged = true;
     // A chase car that falls far behind gives up and leaves: the player shook
     // it. (A roadblock car holds its post instead — it is not chasing anyone.)
     // Without this, the pack could never be lost, because pursuit cars are
-    // faster than anything the player can steal.
-    if (car.role === 'chase' && carDistance > POLICE.giveUpRange) {
+    // faster than anything the player can steal. Only an engaged car gives up:
+    // a fresh spawn is still closing in, not falling behind.
+    if (car.role === 'chase' && car.engaged && carDistance > POLICE.giveUpRange) {
       const index = ctx.vehicles.indexOf(car);
       if (index >= 0) ctx.vehicles.splice(index, 1);
       police.cars.splice(police.cars.indexOf(car), 1);
