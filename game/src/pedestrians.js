@@ -7,6 +7,7 @@
 
 import { CITY, PEDS } from './config.js';
 import { circleHitsBuilding } from './city.js';
+import { carDimensions } from './vehicles.js';
 
 const SHIRTS = ['#c94f43', '#3f7fc9', '#e8e4da', '#d8a03c', '#5f9e6e', '#7a5fc9', '#e07840', '#4ecdc4', '#f2e6b8', '#8a94a6'];
 const SKINS = ['#e8b98a', '#c98d5e', '#8a5a34', '#f2c9a0', '#6e4423'];
@@ -173,13 +174,46 @@ export function panicPed(ped, fromX, fromY, time) {
   ped.fleeUntil = time + 2.5 + Math.random() * 1.5;
 }
 
-function movePed(ped, city, dx, dy, dt) {
+function movePed(ped, city, dx, dy, dt, vehicles) {
   const nextX = ped.x + dx * dt;
-  if (!circleHitsBuilding(city, nextX, ped.y, 12)) ped.x = nextX;
+  if (!circleHitsBuilding(city, nextX, ped.y, 12) && !entersCarZone(vehicles, ped.x, ped.y, nextX, ped.y)) ped.x = nextX;
   const nextY = ped.y + dy * dt;
-  if (!circleHitsBuilding(city, ped.x, nextY, 12)) ped.y = nextY;
+  if (!circleHitsBuilding(city, ped.x, nextY, 12) && !entersCarZone(vehicles, ped.x, ped.y, ped.x, nextY)) ped.y = nextY;
   ped.x = Math.max(CITY.seaWidth + 8, Math.min(city.width - 12, ped.x));
   ped.y = Math.max(12, Math.min(city.height - 12, ped.y));
+}
+
+/**
+ * True when the step from (fromX, fromY) to (toX, toY) would carry the ped
+ * INTO a car they are not already overlapping. A ped must never walk onto a
+ * car: peds who stepped in front of a nearly-stopped car were run over the
+ * moment it sped up, and each one cost a star — quiet cooldowns cascaded
+ * into five stars that way. A ped already overlapping a car (a freed driver
+ * standing where their car was) may always walk out again, so the check is
+ * per car: only a car the ped is NOT already inside blocks the step. Parked
+ * and wrecked cars do not count — they cannot run anyone over, and the kerb
+ * cars sit eight units from a sidewalk line, so blocking on them would pin
+ * every walker on the beach promenade behind a parked car. The margin puts
+ * the stop line just outside the ped-strike rectangle (38 x 19), so a ped
+ * held at the edge is never inside the hit zone.
+ */
+function entersCarZone(vehicles, fromX, fromY, toX, toY) {
+  if (!vehicles) return false;
+  const MARGIN = 8;
+  for (const car of vehicles) {
+    if (car.state === 'parked' || car.state === 'wreck') continue;
+    const { length, width } = carDimensions(car.model);
+    const forward = { x: Math.sin(car.angle), y: -Math.cos(car.angle) };
+    const right = { x: Math.cos(car.angle), y: Math.sin(car.angle) };
+    const fromAlong = (fromX - car.x) * forward.x + (fromY - car.y) * forward.y;
+    const fromSide = (fromX - car.x) * right.x + (fromY - car.y) * right.y;
+    const fromInside = Math.abs(fromAlong) < length / 2 + MARGIN && Math.abs(fromSide) < width / 2 + MARGIN;
+    if (fromInside) continue;
+    const toAlong = (toX - car.x) * forward.x + (toY - car.y) * forward.y;
+    const toSide = (toX - car.x) * right.x + (toY - car.y) * right.y;
+    if (Math.abs(toAlong) < length / 2 + MARGIN && Math.abs(toSide) < width / 2 + MARGIN) return true;
+  }
+  return false;
 }
 
 /** The nearest crossing road's centre-line, if the ped is at an intersection. */
@@ -227,20 +261,25 @@ function stepWalker(ped, city, vehicles, dt, time) {
   const distance = Math.hypot(dx, dy) || 1;
   ped.angle = Math.atan2(dy, dx) + Math.PI / 2;
   ped.walkCycle += dt * 8;
-  movePed(ped, city, (dx / distance) * ped.speed, (dy / distance) * ped.speed, dt);
+  movePed(ped, city, (dx / distance) * ped.speed, (dy / distance) * ped.speed, dt, vehicles);
 
   // At an intersection, sometimes turn onto the crossing road; at a road's end, turn back.
   // A turn walks the ped across the intersection, so it waits for a gap in
   // traffic first: peds who stepped in front of a fast car were killed (+2
   // stars each), and two kills in 14 seconds sank every escape probe. A car
   // within 250 moving faster than a crawl holds the turn until it passes.
+  // A SLOW car close by holds it too: the old check ignored cars under 150,
+  // so a ped stepped out in front of a nearly-stopped car — and the car then
+  // accelerated into them, which is how cooldowns kept taking +1s at 42–51
+  // u/s with the ped at distance 0–4. A car that close is a wall of metal
+  // whatever its speed; the ped waits on the sidewalk until it clears.
   const crossing = crossingAt(ped, city);
   if (crossing && Math.random() < 0.006) {
     let clear = true;
     for (const car of vehicles) {
-      if (car.state === 'parked') continue;
-      if (Math.abs(car.speed) < 150) continue;
-      if (Math.hypot(car.x - ped.x, car.y - ped.y) < 250) { clear = false; break; }
+      if (car.state === 'parked' || car.state === 'wreck') continue;
+      const d = Math.hypot(car.x - ped.x, car.y - ped.y);
+      if (d < 140 || (Math.abs(car.speed) >= 150 && d < 250)) { clear = false; break; }
     }
     if (clear) {
       ped.axis = crossing.axis;
@@ -263,10 +302,10 @@ function stepWalker(ped, city, vehicles, dt, time) {
   }
 }
 
-function stepFleeing(ped, city, dt, time) {
+function stepFleeing(ped, city, vehicles, dt, time) {
   ped.angle = Math.atan2(ped.fleeY, ped.fleeX) + Math.PI / 2;
   ped.walkCycle += dt * 14;
-  movePed(ped, city, ped.fleeX * PEDS.fleeSpeed, ped.fleeY * PEDS.fleeSpeed, dt);
+  movePed(ped, city, ped.fleeX * PEDS.fleeSpeed, ped.fleeY * PEDS.fleeSpeed, dt, vehicles);
   if (time > ped.fleeUntil) {
     // Calmed down: rejoin the nearest sidewalk as a walker.
     ped.state = 'walk';
@@ -345,7 +384,7 @@ export function stepPedestrians(peds, city, vehicles, player, dt, focus, time) {
         }
       }
     }
-    if (ped.state === 'flee') stepFleeing(ped, city, dt, time);
+    if (ped.state === 'flee') stepFleeing(ped, city, vehicles, dt, time);
     else stepWalker(ped, city, vehicles, dt, time);
 
     // Recycle far-off peds so the crowd stays around the action.
