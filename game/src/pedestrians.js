@@ -196,7 +196,7 @@ function crossingAt(ped, city) {
   return null;
 }
 
-function stepWalker(ped, city, dt, time) {
+function stepWalker(ped, city, vehicles, dt, time) {
   if (ped.state === 'idle') {
     if (time < ped.idleUntil) return;
     ped.state = 'walk';
@@ -230,12 +230,24 @@ function stepWalker(ped, city, dt, time) {
   movePed(ped, city, (dx / distance) * ped.speed, (dy / distance) * ped.speed, dt);
 
   // At an intersection, sometimes turn onto the crossing road; at a road's end, turn back.
+  // A turn walks the ped across the intersection, so it waits for a gap in
+  // traffic first: peds who stepped in front of a fast car were killed (+2
+  // stars each), and two kills in 14 seconds sank every escape probe. A car
+  // within 250 moving faster than a crawl holds the turn until it passes.
   const crossing = crossingAt(ped, city);
   if (crossing && Math.random() < 0.006) {
-    ped.axis = crossing.axis;
-    ped.roadPos = crossing.roadPos;
-    ped.side = Math.random() < 0.5 ? -1 : 1;
-    ped.dir = Math.random() < 0.5 ? -1 : 1;
+    let clear = true;
+    for (const car of vehicles) {
+      if (car.state === 'parked') continue;
+      if (Math.abs(car.speed) < 150) continue;
+      if (Math.hypot(car.x - ped.x, car.y - ped.y) < 250) { clear = false; break; }
+    }
+    if (clear) {
+      ped.axis = crossing.axis;
+      ped.roadPos = crossing.roadPos;
+      ped.side = Math.random() < 0.5 ? -1 : 1;
+      ped.dir = Math.random() < 0.5 ? -1 : 1;
+    }
   }
   if (ped.axis === 'v') {
     if (ped.y < 60 && ped.dir < 0) ped.dir = 1;
@@ -334,7 +346,7 @@ export function stepPedestrians(peds, city, vehicles, player, dt, focus, time) {
       }
     }
     if (ped.state === 'flee') stepFleeing(ped, city, dt, time);
-    else stepWalker(ped, city, dt, time);
+    else stepWalker(ped, city, vehicles, dt, time);
 
     // Recycle far-off peds so the crowd stays around the action.
     if (focus && Math.hypot(ped.x - focus.x, ped.y - focus.y) > PEDS.despawn) {
