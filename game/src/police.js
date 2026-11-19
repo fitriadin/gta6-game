@@ -383,14 +383,32 @@ function stepPoliceCar(car, police, ctx, dt) {
   let handbrake = braking || (Math.abs(diff) > 0.9 && Math.abs(car.speed) > 350);
   if (braking) throttle = 0;
   if (recovering) {
-    // Back off: reverse away from the player's car to clear its path. Braking
-    // alone leaves the pursuit sitting in the way, welded to the player's
-    // bumper by the overlap — the player cannot pull away through it. Reverse
-    // throttle brakes hard while the car is still rolling forward, then backs
-    // it straight away (it faces the player, so reverse is away).
-    throttle = -0.8;
-    steer = 0;
-    handbrake = false;
+    // Back off RADIALLY: drive away from the player's car, reversing when the
+    // car faces the player (the usual rear-end touch) or driving forward when
+    // it already faces away. A plain reverse fails the intercept case — the
+    // pursuit leads the player, so it often touches from ahead or alongside,
+    // and reversing then carries it in the player's direction of travel while
+    // the player runs it straight back down (probe 13: the gap never grew
+    // past the spawn distance). Braking alone is worse: the car sits in the
+    // way, welded to the bumper by the overlap. If the player bailed out
+    // mid-recovery, the car just stops.
+    if (player.inCar) {
+      const awayX = car.x - player.inCar.x;
+      const awayY = car.y - player.inCar.y;
+      const awayAngle = Math.atan2(awayX, -awayY);
+      const awayDiff = angleDiffTo(car.angle, awayAngle);
+      if (Math.abs(awayDiff) < Math.PI / 2) {
+        throttle = 1;
+        steer = clamp(awayDiff * 2.4, -1, 1);
+      } else {
+        throttle = -0.8;
+        steer = 0;
+      }
+      handbrake = false;
+    } else {
+      braking = true;
+      throttle = 0;
+    }
   }
   // Reversing is a committed manoeuvre on a timer, not a per-step decision: a
   // per-step rule flips the moment the reversing car passes 100 u/s and the car
