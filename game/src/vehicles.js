@@ -234,6 +234,11 @@ function damageVehicle(vehicle, amount) {
   vehicle.damage = Math.min(100, vehicle.damage + amount);
 }
 
+/** Damage a car from outside the module (bullets, explosions). Chunk 3. */
+export function damageCar(vehicle, amount) {
+  damageVehicle(vehicle, amount);
+}
+
 /**
  * Drive the player's car one fixed step. `drive` is { throttle: -1..1, steer:
  * -1..1, handbrake: bool }. `fx` collects skid marks and smoke; `onCrash` is

@@ -84,6 +84,60 @@ export const PEDS = {
   chatFraction: 0.2,
 };
 
+/** Police: how many units hunt the player per wanted level, and how the heat fades. */
+export const POLICE = {
+  maxStars: 5,
+  /** Pursuit cars wanted at each star level (index = stars). */
+  carsByStars: [0, 1, 1, 2, 3, 4],
+  /** Foot officers wanted at each star level. */
+  officersByStars: [0, 1, 2, 2, 3, 3],
+  /** Stars at which roadblocks start appearing ahead of the player. */
+  roadblockStars: 3,
+  roadblockCooldown: 28,
+  /** Clean seconds out of sight before one star drops off. */
+  decaySeconds: 18,
+  /** No police unit this close counts as "out of sight" for the decay timer. */
+  hiddenRange: 650,
+  spawnCarMin: 550,
+  spawnCarMax: 950,
+  spawnOfficerMin: 300,
+  spawnOfficerMax: 520,
+  despawnRange: 1700,
+  officerSpeed: 265,
+  officerRunSpeed: 320,
+  arrestRange: 26,
+  /** Seconds an officer must hold onto the player (on foot) to make the bust. */
+  arrestSeconds: 1.4,
+  punchDamage: 6,
+  punchCooldown: 0.9,
+  /** Damage to the player when a police car slams into their car. */
+  ramDamage: 5,
+  ramCooldown: 1,
+  /** Where a busted player wakes up: the station steps on the Downtown avenue. */
+  station: { x: 2650, y: 780 },
+  sirenRange: 900,
+  /** Wanted stars each crime is worth. */
+  crime: { steal: 1, hitPed: 1, killPed: 2, shootNearPolice: 1, destroyCar: 1, hitOfficer: 1, downOfficer: 2 },
+};
+
+/** Combat: the pistol, the punch, bullets and what an explosion does. */
+export const COMBAT = {
+  pistolDamage: 34,
+  pistolCooldown: 0.26,
+  driveByCooldown: 0.34,
+  /** Drive-by spread in radians each way — shooting from a moving car is wild. */
+  driveBySpread: 0.09,
+  bulletSpeed: 1400,
+  bulletLife: 0.9,
+  meleeDamage: 34,
+  meleeRange: 46,
+  meleeCooldown: 0.45,
+  explosionRadius: 130,
+  explosionDamage: 70,
+  /** Car damage at which the car catches fire and blows up. */
+  wreckDamage: 100,
+};
+
 /** Synthesized audio: engine pitch follows speed between these frequencies. */
 export const AUDIO = {
   engineBaseHz: 55,
@@ -93,13 +147,17 @@ export const AUDIO = {
   masterGain: 0.9,
 };
 
-/** Skid marks and dust: how long they linger, how many the world keeps. */
+/** Skid marks and dust: how long they linger, how many the world keeps. Explosions
+ * throw a lot of particles at once, so the puff cap is generous. */
 export const EFFECTS = {
   skidLife: 22,
   maxSkids: 400,
-  maxPuffs: 160,
+  maxPuffs: 240,
   puffLife: 0.9,
   smokeLife: 1.6,
+  fireLife: 0.55,
+  sparkLife: 0.35,
+  flashLife: 0.07,
 };
 
 export const CAMERA = {
@@ -177,6 +235,7 @@ export const KEYS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
   interact: ['KeyE'],
+  melee: ['KeyF'],
   sprint: ['Space', 'ShiftLeft', 'ShiftRight'],
   pause: ['KeyP', 'Escape'],
   mute: ['KeyM'],

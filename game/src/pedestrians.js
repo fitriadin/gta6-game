@@ -61,6 +61,11 @@ function makePed(city, focusX, focusY, random, state = 'walk') {
     fleeY: 0,
     car: null,
     chatUntil: 0,
+    // Combat (chunk 3): health, and the 'down' state — a ped who was hit hard
+    // lies on the ground until downUntil, then gets up and walks away.
+    health: 100,
+    downUntil: 0,
+    officer: false,
   };
   nextPedId += 1;
   return ped;
@@ -133,6 +138,9 @@ function makePedFromCar(car, random) {
     fleeY: 0,
     car,
     chatUntil: 0,
+    health: 100,
+    downUntil: 0,
+    officer: false,
   };
   nextPedId += 1;
   return ped;
@@ -155,7 +163,7 @@ export function scareNearby(peds, x, y, radius, time) {
 }
 
 export function panicPed(ped, fromX, fromY, time) {
-  if (ped.state === 'driver') return;
+  if (ped.state === 'driver' || ped.officer) return;
   ped.state = 'flee';
   const dx = ped.x - fromX;
   const dy = ped.y - fromY;
@@ -280,8 +288,28 @@ function stepFleeing(ped, city, dt, time) {
  * with their cars, and anyone near a fast car panics. Peds that wander too far
  * from `focus` (the camera) are recycled onto a sidewalk near it.
  */
+/** Knock a ped down: they lie on the ground for `seconds`, then get up and flee.
+ * Officers (chunk 3) get up and resume the chase instead. */
+export function setPedDown(ped, time, seconds) {
+  ped.state = 'down';
+  ped.downUntil = time + seconds;
+  // Lying flat: the renderer draws a 'down' ped rotated, fading out.
+  ped.angle += Math.PI / 2;
+}
+
 export function stepPedestrians(peds, city, vehicles, player, dt, focus, time) {
   for (const ped of peds) {
+    // Officers are police.js's to move — they chase, they never wander or panic.
+    if (ped.officer) continue;
+    if (ped.state === 'down') {
+      if (time > ped.downUntil) {
+        // Got up and walked off: recycle into a fresh walker near the camera.
+        const fresh = makePed(city, focus.x, focus.y, Math.random);
+        const keepId = ped.id;
+        Object.assign(ped, fresh, { id: keepId });
+      }
+      continue;
+    }
     if (ped.state === 'driver') {
       if (ped.car) {
         ped.x = ped.car.x;

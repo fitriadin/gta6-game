@@ -10,6 +10,7 @@ export const ACTION_PAUSE = 2;
 export const ACTION_INTERACT = 4;
 export const ACTION_MUTE = 8;
 export const ACTION_CLICK = 16;
+export const ACTION_MELEE = 32;
 
 function codeSet(codes) {
   return new Set(codes);
@@ -20,6 +21,7 @@ const DOWN = codeSet(KEYS.down);
 const LEFT = codeSet(KEYS.left);
 const RIGHT = codeSet(KEYS.right);
 const INTERACT = codeSet(KEYS.interact);
+const MELEE = codeSet(KEYS.melee);
 const SPRINT = codeSet(KEYS.sprint);
 const PAUSE = codeSet(KEYS.pause);
 const MUTE = codeSet(KEYS.mute);
@@ -49,6 +51,8 @@ export function createInput(target) {
     else if (SPRINT.has(event.code)) held.sprint = true;
     else if (INTERACT.has(event.code)) {
       if (!event.repeat) actions |= ACTION_INTERACT;
+    } else if (MELEE.has(event.code)) {
+      if (!event.repeat) actions |= ACTION_MELEE;
     } else if (PAUSE.has(event.code)) {
       if (!event.repeat) actions |= ACTION_PAUSE;
     } else if (MUTE.has(event.code)) {
