@@ -15,6 +15,7 @@
 import { MISSIONS } from './config.js';
 import { circleHitsBuilding, isRoad, nearestRoadPoint } from './city.js';
 import { forwardOf, makeVehicle, stepPlayerVehicle } from './vehicles.js';
+// The road-grid navigation the pursuit cars use — rivals drive the same grid.
 import { nearIntersection, nearestRoad, pursuitAim } from './police.js';
 
 /** The six jobs, in story order. `start` is the marker that opens the briefing. */
@@ -185,7 +186,9 @@ export function startMission(missions, id, ctx) {
       const rival = makeVehicle(models[index], colours[index], spot.x, spot.y, spot.angle, 'rival');
       rival.stuckTimer = 0;
       rival.reverseUntil = 0;
-      // The road-grid chase needs to know which road the rival starts on.
+      // The road-grid chase tracks which road the car is on — seed it from
+      // the spawn point. farSince starts now, so the nudge failsafe counts
+      // from mission start, not from the beginning of time.
       const road = nearestRoad(ctx.city, spot.x, spot.y);
       rival.axis = road.axis;
       rival.roadPos = road.pos;
@@ -268,14 +271,16 @@ function stepRival(rival, ctx, dt) {
   const warehouse = MISSIONS.points.m4Start;
   const playerDistance = Math.hypot(rival.x - player.x, rival.y - player.y);
   if (playerDistance < MISSIONS.rivalCloseRange) {
+    // In reach: the "out of reach" clock resets.
     rival.farSince = ctx.time;
   } else if (
     ctx.time - rival.farSince > MISSIONS.rivalNudgeSeconds &&
     Math.hypot(player.x - warehouse.x, player.y - warehouse.y) < MISSIONS.rivalLeash
   ) {
-    // Last resort: back on the nearest road, a short drive from the player,
-    // facing them. Only fires while the player is near the warehouse, so a
-    // chase the player ran away from is not dragged back to them.
+    // Last resort: put the rival back on the nearest road, a short drive from
+    // the player, facing them. Only fires while the player is near the
+    // warehouse, so a chase the player ran away from is not dragged back to
+    // them.
     const dx = rival.x - player.x;
     const dy = rival.y - player.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -296,11 +301,11 @@ function stepRival(rival, ctx, dt) {
 
   // Past the leash, the warehouse is the target — the fight stays local. The
   // check runs on where the car will be in half a second, not where it is:
-  // at 600 u/s a car that only turns at the line overshoots it by half a block
-  // before the U-turn bites. Hysteresis: once the leash pulls a rival back, it
-  // stays pulled until the rival is well inside again — without it the car
-  // flip-flops at the line, turning back out the moment its nose crosses
-  // inside, and hovers at the boundary instead of coming home.
+  // at 600 u/s a car that only turns at the line overshoots it by half a
+  // block before the U-turn bites. Hysteresis: once the leash pulls a rival
+  // back, it stays pulled until the rival is well inside again — without it
+  // the car flip-flops at the line, turning back out the moment its nose
+  // crosses inside, and hovers at the boundary instead of coming home.
   const aheadX = rival.x + rival.vx * 0.5;
   const aheadY = rival.y + rival.vy * 0.5;
   const aheadFromWarehouse = Math.hypot(aheadX - warehouse.x, aheadY - warehouse.y);
@@ -310,9 +315,9 @@ function stepRival(rival, ctx, dt) {
   const leashed = rival.leashed;
   const target = leashed ? warehouse : player;
 
-  // Shoved off the tracked road (a ram, a spin): adopt the nearest road again —
-  // but never at an intersection, where the two roads are equally near and the
-  // car would flip-flop between them instead of turning.
+  // Shoved off the tracked road (a ram, a spin): adopt the nearest road again
+  // — but never at an intersection, where the two roads are equally near and
+  // the car would flip-flop between them instead of turning.
   const offTrack =
     rival.axis === 'v' ? Math.abs(rival.x - rival.roadPos) > 60 : Math.abs(rival.y - rival.roadPos) > 60;
   if (offTrack && !nearIntersection(ctx.city, rival.x, rival.y, rival.axis)) {
@@ -371,9 +376,9 @@ function stepRival(rival, ctx, dt) {
   }
   let steer = clamp(diff * 2.2, -1, 1);
   // Reversing is a committed manoeuvre on a timer, not a per-step decision: a
-  // per-step rule flips the moment the reversing car passes 100 u/s and the car
-  // ends up seesawing forward and back in place. Two triggers share the timer:
-  // stuck against something, or facing the wrong way at low speed.
+  // per-step rule flips the moment the reversing car passes 100 u/s and the
+  // car ends up seesawing forward and back in place. Two triggers share the
+  // timer: stuck against something, or facing the wrong way at low speed.
   if (speed < 25 && throttle > 0 && ctx.time >= rival.reverseUntil) {
     rival.stuckTimer += dt;
     if (rival.stuckTimer > 1.4) {
