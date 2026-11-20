@@ -34,16 +34,16 @@ export function createPolice() {
     /** Game time of the most recent crime — the pack only reinforces while the
      * trail is fresh or a unit is still in the area, so a clean escape is real. */
     lastCrimeAt: -100,
-    /** What the most recent crime was ({ reason, time }) — a debug handle so a
-     * playtest can tell a ped strike from a wrecked car instead of guessing
+    /** What the most recent crime was ({ reason, time }) — a debug handle so
+     * a playtest can tell a ped strike from a wrecked car instead of guessing
      * from whatever happened to be nearby when the star appeared. */
     lastCrime: null,
   };
 }
 
 /** Raise the heat, clamped at five stars; any crime resets the clean timer.
- * `reason` (e.g. 'hitPed', 'destroyCar') is recorded for debugging; scripted
- * wanted changes (mission starts) pass none. */
+ * `reason` names the crime ('hitPed', 'destroyCar', ...) and is recorded for
+ * debugging; scripted wanted changes (mission starts) pass none. */
 export function addWanted(police, amount, time, reason = null) {
   police.wanted = Math.min(POLICE.maxStars, Math.max(0, police.wanted + amount));
   police.cleanTime = 0;
@@ -127,8 +127,8 @@ function spawnPoliceCar(police, ctx, role = 'chase') {
   car.reverseUntil = 0;
   car.blockUntil = 0;
   car.recoverUntil = 0;
-  // A chase car only gives up once it has actually engaged the player (been
-  // within give-up range): fresh cars spawn 800–1300 out, past that range, so
+  // A chase car only gives up once it has actually engaged the player — been
+  // inside give-up range. Fresh cars spawn 800–1300 out, past that range, so
   // without this flag every spawn despawned on its first step and no pursuit
   // ever happened at all.
   car.engaged = false;
@@ -203,7 +203,8 @@ function clamp(value, min, max) {
 }
 
 /** The road centre-line nearest a point, with its distance. Exported: the
- * mission rivals navigate the same road grid, so they share this helper. */
+ * mission rivals navigate the same road grid, so they share this helper
+ * instead of keeping their own copy. */
 export function nearestRoad(city, x, y) {
   let best = null;
   let bestDistance = Infinity;
@@ -231,7 +232,7 @@ export function nearestRoad(city, x, y) {
  * instead: along its own road to the intersection with the player's road, turn,
  * and only beeline once both are on the same road.
  *
- * Exported: the mission rivals (missions.js) drive the same grid — a rival
+ * Exported: the mission rivals in missions.js drive the same grid. A rival
  * that beelined at the player wedged against building faces and could never
  * be finished, which made mission 4 uncompletable.
  */
@@ -271,7 +272,8 @@ export function pursuitAim(car, player, city) {
 }
 
 /** Is the point near an intersection with a road of the other axis? Exported
- * for the mission rivals, which re-adopt their road the same way. */
+ * for the mission rivals, which re-adopt their road the same way a pursuit
+ * car does. */
 export function nearIntersection(city, x, y, axis) {
   if (axis === 'v') {
     for (const road of city.hRoads) {
@@ -613,6 +615,7 @@ function checkPedStrikes(police, ctx) {
     const killed = speed > 300;
     ped.health = killed ? 0 : Math.max(0, ped.health - 50);
     setPedDown(ped, ctx.time, killed ? 6 : 3);
+    // Running a ped over is a crime — a kill is the heavier one.
     addWanted(police, killed ? POLICE.crime.killPed : POLICE.crime.hitPed, ctx.time, killed ? 'killPed' : 'hitPed');
     scareNearby(ctx.peds, ped.x, ped.y, 220, ctx.time);
     if (ctx.effects) ctx.effects.addSparks(ped.x, ped.y);
@@ -676,12 +679,14 @@ export function stepPolice(police, ctx, dt) {
       continue;
     }
     const carDistance = Math.hypot(car.x - ctx.player.x, car.y - ctx.player.y);
+    // Once a chase car has closed to give-up range it has engaged: from then
+    // on, falling back past that range means the player shook it.
     if (carDistance < POLICE.giveUpRange) car.engaged = true;
     // A chase car that falls far behind gives up and leaves: the player shook
     // it. (A roadblock car holds its post instead — it is not chasing anyone.)
     // Without this, the pack could never be lost, because pursuit cars are
-    // faster than anything the player can steal. Only an engaged car gives up:
-    // a fresh spawn is still closing in, not falling behind.
+    // faster than anything the player can steal. Only an engaged car gives
+    // up: a fresh spawn is still closing in, not falling behind.
     if (car.role === 'chase' && car.engaged && carDistance > POLICE.giveUpRange) {
       const index = ctx.vehicles.indexOf(car);
       if (index >= 0) ctx.vehicles.splice(index, 1);
