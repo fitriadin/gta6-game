@@ -152,9 +152,10 @@ export const COMBAT = {
   explosionDamage: 70,
   /** Car damage at which the car catches fire and blows up. */
   wreckDamage: 100,
-  /** Damage the player must have dealt to a car for its explosion to count
-   * as the player's crime (one bullet is 34; a hard ram is ~7). Below this,
-   * the car was wrecked by someone — or something — else. */
+  /** How much damage the player must personally have done to a car before its
+   * explosion counts as the player's crime. One pistol round is 34 damage and
+   * a hard ram is around 7, so 30 means "the player really did wreck this
+   * car" — anything less and it was wrecked by someone (or something) else. */
   destroyAttribution: 30,
 };
 
@@ -179,17 +180,17 @@ export const MISSIONS = {
     { x: 1178, y: 2860, angle: Math.PI / 2 },
     { x: 3258, y: 2860, angle: -Math.PI / 2 },
   ],
-  /** Rivals never chase beyond this distance from the warehouse: past it they
-   * turn back to the warehouse instead, so the fight stays in the neighbourhood
-   * and a rival can never be lost across the city. */
+  /** How far a rival may chase from the warehouse before it turns back: the
+   * fight stays in the neighbourhood and a rival can never get lost across
+   * the city. */
   rivalLeash: 1600,
-  /** A live rival counts as "in reach" inside this distance from the player. */
+  /** A live rival inside this distance from the player counts as "in reach". */
   rivalCloseRange: 500,
-  /** A live rival that stays out of reach for this long — while the player is
-   * near the warehouse, so it is not a chase the player ran away from — is put
-   * back on the nearest road toward the player. A last-resort failsafe against
-   * a rival wedged somewhere the road grid cannot reach: the job must always
-   * be finishable. */
+  /** How long a live rival may stay out of reach — while the player is near
+   * the warehouse, so this is not a chase the player ran away from — before it
+   * is put back on the nearest road toward the player. A last-resort failsafe
+   * against a rival wedged somewhere the road grid cannot reach: the job must
+   * always be finishable. */
   rivalNudgeSeconds: 25,
   points: {
     // M1: Vera's pickup on the Downtown avenue, delivery down to the Marina.

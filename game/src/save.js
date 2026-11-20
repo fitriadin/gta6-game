@@ -57,9 +57,10 @@ export function saveGame(state) {
             x: Math.round(car.x),
             y: Math.round(car.y),
             angle: car.angle,
-            // A car that was drivable when saved must still be drivable on
-            // load: rounding 99.5 up to 100 would make it explode on the
-            // first step after Continue and kill the freshly loaded player.
+            // A car that was still drivable when saved must still be drivable
+            // after loading: rounding a damage of 99.5 up to 100 would make it
+            // explode on the first step after Continue and kill the player
+            // they just loaded in. Clamp below the wreck threshold.
             damage: Math.min(99, Math.round(car.damage)),
           }
         : null,
