@@ -50,7 +50,8 @@ export function tryShoot(combat, origin, angle, options, ctx) {
   if (ctx) {
     if (ctx.effects) ctx.effects.addMuzzle(muzzle.x, muzzle.y, aim);
     if (ctx.audio) ctx.audio.gunshot();
-    // Firing a gun where the police can hear it is a crime in itself.
+    // Firing a gun within earshot of the police is a crime in itself — one
+    // star at most every two seconds, however fast the trigger finger.
     const near = nearestPoliceDistance(ctx.police, origin.x, origin.y);
     if (near < 600 && ctx.time - combat.lastShotNearPolice > 2) {
       combat.lastShotNearPolice = ctx.time;
@@ -80,7 +81,13 @@ function hurtPed(combat, ped, amount, ctx) {
   ped.health -= amount;
   if (ped.health <= 0) {
     setPedDown(ped, ctx.time, ped.officer ? 4 : 6);
-    if (ctx.addWanted) ctx.addWanted(ped.officer ? POLICE.crime.downOfficer : POLICE.crime.killPed, ped.officer ? 'downOfficer' : 'killPed');
+    // A kill is always its own, heavier crime — an officer down is worse.
+    if (ctx.addWanted) {
+      ctx.addWanted(
+        ped.officer ? POLICE.crime.downOfficer : POLICE.crime.killPed,
+        ped.officer ? 'downOfficer' : 'killPed',
+      );
+    }
     if (!ped.officer) scareNearby(ctx.peds, ped.x, ped.y, 260, ctx.time);
     return true;
   }
@@ -159,6 +166,9 @@ export function stepCombat(combat, ctx, dt) {
         if (!bulletHitsCar(bullet, car)) continue;
         if (ctx.effects) ctx.effects.addSparks(bullet.x, bullet.y);
         damageCar(car, COMBAT.pistolDamage);
+        // The player's bullets count toward the destroyCar attribution: if
+        // this car later blows up, the star fires only when the player's
+        // share of the damage is substantial.
         car.playerDamage = (car.playerDamage || 0) + COMBAT.pistolDamage;
         if (car.state === 'police' && ctx.addWanted) ctx.addWanted(POLICE.crime.hitOfficer, 'hitOfficer');
         spent = true;
@@ -190,20 +200,16 @@ export function checkExplosions(ctx) {
     if (ctx.effects) ctx.effects.addExplosion(car.x, car.y);
     if (ctx.audio) ctx.audio.explosion();
     if (ctx.cam) ctx.cam.addShake(16);
-    // Destroying a car is a crime — but only if the PLAYER destroyed it. The
-    // old code blamed the player for every explosion in the city: a chain
-    // blast set off two more cars and cost +3 stars at once (run 7's M3
-    // escape), and a police car ramming traffic into a wall did the same.
-    // The star fires only when the player's own damage to this car is
-    // substantial (one bullet is 34; a hard ram is ~7), and never for the
-    // player's own car — wrecking your own ride is not a crime.
-    if (
-      ctx.addWanted &&
-      car.state !== 'player' &&
-      (car.playerDamage || 0) >= COMBAT.destroyAttribution
-    ) {
-      ctx.addWanted(POLICE.crime.destroyCar, 'destroyCar');
-    }
+    // Destroying a car is a crime — but only when the PLAYER destroyed it.
+    // Blaming the player for every explosion in the city was wrong: a chain
+    // blast could set off two more cars and cost +3 stars at once, and a
+    // police car ramming traffic into a wall did the same. The star fires
+    // only when the player's own damage to this car is substantial (one
+    // bullet is 34; a hard ram is ~7), and never for the player's own car —
+    // wrecking your own ride is not a crime.
+    const playerWreckedIt =
+      ctx.addWanted && car.state !== 'player' && (car.playerDamage || 0) >= COMBAT.destroyAttribution;
+    if (playerWreckedIt) ctx.addWanted(POLICE.crime.destroyCar, 'destroyCar');
 
     // The driver goes down with the car: out on foot, badly hurt.
     if (ctx.player.inCar === car) {
@@ -225,7 +231,7 @@ export function checkExplosions(ctx) {
         panicPed(ped, car.x, car.y, ctx.time);
       }
     }
-    if (pedKilled && ctx.addWanted) ctx.addWanted(POLICE.crime.killPed, 'killPed');
+    if (pedKilled && ctx.addWanted) ctx.addWanted(POLICE.crime.killPed, 'killPed'); // blast killed a bystander
     const playerDistance = Math.hypot(ctx.player.x - car.x, ctx.player.y - car.y);
     if (playerDistance < COMBAT.explosionRadius && ctx.player.inCar !== car) {
       const falloff = 1 - playerDistance / COMBAT.explosionRadius;
