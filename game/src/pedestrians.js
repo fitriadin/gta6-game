@@ -7,6 +7,7 @@
 
 import { CITY, PEDS } from './config.js';
 import { circleHitsBuilding } from './city.js';
+// Car dimensions, so a ped never walks into a car's body rectangle.
 import { carDimensions } from './vehicles.js';
 
 const SHIRTS = ['#c94f43', '#3f7fc9', '#e8e4da', '#d8a03c', '#5f9e6e', '#7a5fc9', '#e07840', '#4ecdc4', '#f2e6b8', '#8a94a6'];
@@ -170,10 +171,10 @@ export function panicPed(ped, fromX, fromY, time) {
   const dy = ped.y - fromY;
   const distance = Math.hypot(dx, dy);
   if (distance < 1) {
-    // Standing exactly on the danger (a freed driver, at their car's centre):
-    // a zero flee vector would leave them frozen in the road, where the next
-    // car runs them over. Flee in a random direction instead — any direction
-    // beats standing still.
+    // Standing exactly on the danger — a freed driver at their car's centre,
+    // say. A zero flee vector would leave them frozen in the road, where the
+    // next car runs them over, so flee in a random direction instead: any
+    // direction beats standing still.
     const angle = Math.random() * Math.PI * 2;
     ped.fleeX = Math.cos(angle);
     ped.fleeY = Math.sin(angle);
@@ -184,6 +185,8 @@ export function panicPed(ped, fromX, fromY, time) {
   ped.fleeUntil = time + 2.5 + Math.random() * 1.5;
 }
 
+/** Move a ped one step, axis by axis, sliding along buildings — and never
+ * walking into a car (see entersCarZone). */
 function movePed(ped, city, dx, dy, dt, vehicles) {
   const nextX = ped.x + dx * dt;
   if (!circleHitsBuilding(city, nextX, ped.y, 12) && !entersCarZone(vehicles, ped.x, ped.y, nextX, ped.y)) ped.x = nextX;
@@ -217,6 +220,7 @@ function entersCarZone(vehicles, fromX, fromY, toX, toY) {
     const right = { x: Math.cos(car.angle), y: Math.sin(car.angle) };
     const fromAlong = (fromX - car.x) * forward.x + (fromY - car.y) * forward.y;
     const fromSide = (fromX - car.x) * right.x + (fromY - car.y) * right.y;
+    // Already inside this car: let them walk out, never trap them in it.
     const fromInside = Math.abs(fromAlong) < length / 2 + MARGIN && Math.abs(fromSide) < width / 2 + MARGIN;
     if (fromInside) continue;
     const toAlong = (toX - car.x) * forward.x + (toY - car.y) * forward.y;
@@ -278,17 +282,18 @@ function stepWalker(ped, city, vehicles, dt, time) {
   // traffic first: peds who stepped in front of a fast car were killed (+2
   // stars each), and two kills in 14 seconds sank every escape probe. A car
   // within 250 moving faster than a crawl holds the turn until it passes.
-  // A SLOW car close by holds it too: the old check ignored cars under 150,
-  // so a ped stepped out in front of a nearly-stopped car — and the car then
-  // accelerated into them, which is how cooldowns kept taking +1s at 42–51
-  // u/s with the ped at distance 0–4. A car that close is a wall of metal
-  // whatever its speed; the ped waits on the sidewalk until it clears.
+  // A SLOW car close by holds it too: ignoring cars under 150 u/s let a ped
+  // step out in front of a nearly-stopped car — and the car then accelerated
+  // into them, which is how cooldowns kept taking +1s at 42–51 u/s with the
+  // ped at distance 0–4. A car that close is a wall of metal whatever its
+  // speed; the ped waits on the sidewalk until it clears.
   const crossing = crossingAt(ped, city);
   if (crossing && Math.random() < 0.006) {
     let clear = true;
     for (const car of vehicles) {
       if (car.state === 'parked' || car.state === 'wreck') continue;
       const d = Math.hypot(car.x - ped.x, car.y - ped.y);
+      // Close is close at any speed; farther out, only a fast car blocks.
       if (d < 140 || (Math.abs(car.speed) >= 150 && d < 250)) { clear = false; break; }
     }
     if (clear) {
@@ -312,6 +317,8 @@ function stepWalker(ped, city, vehicles, dt, time) {
   }
 }
 
+/** A fleeing ped runs straight away from the danger — sliding along buildings
+ * and never into a car, like a walker. */
 function stepFleeing(ped, city, vehicles, dt, time) {
   ped.angle = Math.atan2(ped.fleeY, ped.fleeX) + Math.PI / 2;
   ped.walkCycle += dt * 14;
@@ -391,10 +398,9 @@ export function stepPedestrians(peds, city, vehicles, player, dt, focus, time) {
         // The player's car scares peds from 100 u/s up — below the 120 crime
         // threshold, so a ped in the road flees before a car fast enough to
         // hurt them arrives. At the old 143 threshold there was a dead zone
-        // (120–143) where a car could hit a ped who never panicked: run 2's
-        // M3 escape took a +1 at 141 that way. Traffic keeps the old
-        // threshold — peds fleeing from every passing car would empty the
-        // sidewalks.
+        // (120–143) where a car could hit a ped who never panicked. Traffic
+        // keeps the old threshold — peds fleeing from every passing car would
+        // empty the sidewalks.
         const panicSpeed = car.state === 'player' ? 100 : PEDS.panicSpeed * 0.55;
         if (distance < threat && speed > panicSpeed) {
           panicPed(ped, car.x, car.y, time);
