@@ -77,7 +77,8 @@ const state = {
   time: 0,
 };
 
-/** Raise the heat and keep the HUD's copy in step. */
+/** Raise the heat and keep the HUD's copy in step. `reason` names the crime
+ * (e.g. 'steal') so a playtest can tell what earned the star. */
 function raiseWanted(amount, reason = null) {
   addWanted(state.police, amount, state.time, reason);
   state.wanted = state.police.wanted;
@@ -513,6 +514,7 @@ function runGame() {
         audio.door();
         audio.steal();
         const wasClean = state.police.wanted === 0;
+        // Stealing a car is a crime — record why, for the debug handle.
         raiseWanted(POLICE.crime.steal, 'steal');
         showToast(
           occupied

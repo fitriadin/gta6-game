@@ -95,10 +95,10 @@ export function makeVehicle(model, colour, x, y, angle, state = 'parked') {
     vy: 0,
     state,
     damage: 0,
-    // Damage the player dealt to this car (collisions + bullets): the
-    // destroyCar star only fires when the player's share is substantial (see
-    // checkExplosions) — a car the police wrecked, or one a chain blast set
-    // off, is not the player's crime.
+    // Damage the player personally dealt to this car, from collisions and
+    // bullets: the destroyCar star only fires when the player's share is
+    // substantial (see checkExplosions in combat.js) — a car the police
+    // wrecked, or one a chain blast set off, is not the player's crime.
     playerDamage: 0,
     driver: null,
     // Traffic AI: which road it follows, which way, and how fast it cruises.
@@ -592,6 +592,8 @@ function collideCars(vehicles, city, onPlayerCrash, dt = 1 / 60) {
           if (a.hitCooldown <= 0) {
             a.hitCooldown = 0.5;
             damageVehicle(a, hit);
+            // If the other car is the player's, this damage is the player's
+            // doing — it counts toward the destroyCar attribution.
             if (b.state === 'player') a.playerDamage = (a.playerDamage || 0) + hit;
           }
           if (b.hitCooldown <= 0) {
